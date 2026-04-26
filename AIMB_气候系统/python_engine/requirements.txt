@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+torch
+xarray
+netCDF4
+numpy

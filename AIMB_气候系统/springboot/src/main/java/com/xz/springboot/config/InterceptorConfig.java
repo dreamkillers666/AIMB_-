@@ -15,7 +15,7 @@ public class InterceptorConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtInterceptor) // Use the injected interceptor
+        registry.addInterceptor(jwtInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns(
                         "/user/login",
@@ -23,11 +23,20 @@ public class InterceptorConfig implements WebMvcConfigurer {
                         "/**/export",
                         "/**/import",
                         "/file/**",
-                        "/griddata/**", // This rule will now be respected
+                        "/griddata/**",
                         "/ensodata/**",
-                        "/enso/**",
+                        "/enso/**",      // 你的预测接口路径
                         "/api/enso/**",
-                        "/"
+                        "/",
+                        // --- 以下是必须新增的 Swagger 排除路径 ---
+                        "/swagger-ui/**",
+                        "/swagger-resources/**",
+                        "/v2/api-docs/**",
+                        "/v3/api-docs/**",
+                        "/webjars/**",
+                        "/doc.html",      //
+                        "/favicon.ico",
+                        "/error"
                 );
     }
 

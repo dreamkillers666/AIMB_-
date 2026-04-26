@@ -3,6 +3,8 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/AIMB_气候系统.iml" filepath="$PROJECT_DIR$/.idea/AIMB_气候系统.iml" />
+      <module fileurl="file://$PROJECT_DIR$/python_engine/python_engine.iml" filepath="$PROJECT_DIR$/python_engine/python_engine.iml" />
+      <module fileurl="file://$PROJECT_DIR$/AIMB_气候系统/springboot/springboot.iml" filepath="$PROJECT_DIR$/AIMB_气候系统/springboot/springboot.iml" />
     </modules>
   </component>
 </project>

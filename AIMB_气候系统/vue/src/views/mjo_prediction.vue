@@ -8,6 +8,7 @@
         <el-menu-item index="/usermanage/enso_pre">MEPM预测结果</el-menu-item>
         <el-menu-item index="/usermanage/mjo_pre">MISM预测结果</el-menu-item>
         <el-menu-item index="/usermanage/rainfall_pre">STRA-Net预测结果</el-menu-item>
+        <el-menu-item index="/usermanage/convlstm_pre">ConvLSTM预测结果</el-menu-item>
       </el-menu>
     </div>
 

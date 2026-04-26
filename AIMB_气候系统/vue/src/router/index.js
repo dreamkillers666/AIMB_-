@@ -167,6 +167,11 @@ const routes = [
         component: () => import('../views/rainfall_prediction.vue'),
       },
       {
+        path: 'convlstm_pre',
+        name: 'ConvLSTM预测产品',
+        component: () => import('../views/convlstm_prediction.vue'),
+      },
+      {
         path: 'teamPage',
         name: '团队成果',
         component: () => import('../views/teamPage.vue'),
