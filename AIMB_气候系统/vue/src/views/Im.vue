@@ -2,8 +2,8 @@
   <div style="padding: 10px; margin-bottom: 50px">
     <el-row>
       <el-col :span="8">
-        <el-card style="width: 100%; min-height: 300px; color: #333">
-          <div style="padding-bottom: 10px; border-bottom: 1px solid #ccc">在线用户<span style="font-size: 12px">（点击聊天气泡开始聊天）</span></div>
+        <el-card style="width: 100%; min-height: 300px; color: #cbd5e1">
+          <div style="padding-bottom: 10px; border-bottom: 1px solid rgba(100, 116, 139, 0.3)">在线用户<span style="font-size: 12px">（点击聊天气泡开始聊天）</span></div>
           <div style="padding: 10px 0" v-for="user in users" :key="user.username">
             <span>{{ user.username }}</span>
             <i class="el-icon-chat-dot-round" style="margin-left: 10px; font-size: 16px; cursor: pointer"

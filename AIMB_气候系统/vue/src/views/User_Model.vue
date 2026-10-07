@@ -9,7 +9,6 @@
 
 
       <el-table :data="tableData" border stripe
-                style="color: #0f142b"
                 :header-cell-class-name="'headerBg'"
                 @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55"></el-table-column>

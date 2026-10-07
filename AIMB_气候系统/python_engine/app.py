@@ -10,13 +10,36 @@ from sklearn.metrics import mean_squared_error
 from scipy.stats import pearsonr
 from torch.utils.data import DataLoader
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # 导入你的模型和数据集处理模块
 from model import ENSO_Seq2Seq_ConvLSTM
 from enso_dataset import ENSOSpatialDataset
+import wind_service
 
 app = FastAPI(title="ConvLSTM预测模型")
+
+# CORS: 前端(如 http://localhost:8080)直连 8000 端口
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/wind")
+def get_wind():
+    """返回 leaflet-velocity 格式的全球 GFS 10m 风场 JSON。
+
+    缓存有效时直接返回；否则尝试刷新；失败返回 503。
+    """
+    result = wind_service.get_latest_wind()
+    if result is None:
+        detail = wind_service.last_error or "GFS wind data unavailable"
+        raise HTTPException(status_code=503, detail=detail)
+    return result
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

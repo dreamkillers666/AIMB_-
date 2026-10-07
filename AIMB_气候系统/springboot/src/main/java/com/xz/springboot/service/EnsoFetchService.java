@@ -87,8 +87,22 @@ public class EnsoFetchService {
     private Map<String, Object> fetchCpc() {
         Map<String, Object> out = new LinkedHashMap<>();
         try {
-            List<CpcStrengthsParser.Row> rows = new CpcStrengthsParser().parse(cpcUrl, timeoutMs);
             LocalDateTime now = LocalDateTime.now();
+
+            // 幂等：当天已抓取过则跳过，避免每次抓取都插入新行造成数据堆积
+            EnsoCpcStrengths latest = cpcMapper.selectOne(
+                    new LambdaQueryWrapper<EnsoCpcStrengths>()
+                            .orderByDesc(EnsoCpcStrengths::getFetchedAt)
+                            .last("limit 1"));
+            if (latest != null && latest.getFetchedAt() != null
+                    && latest.getFetchedAt().toLocalDate().equals(now.toLocalDate())) {
+                out.put("inserted", 0);
+                out.put("fetchedAt", latest.getFetchedAt());
+                out.put("message", "already up-to-date");
+                return out;
+            }
+
+            List<CpcStrengthsParser.Row> rows = new CpcStrengthsParser().parse(cpcUrl, timeoutMs);
             int inserted = 0;
             for (CpcStrengthsParser.Row r : rows) {
                 EnsoCpcStrengths c = new EnsoCpcStrengths();

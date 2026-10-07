@@ -3,11 +3,9 @@
   <el-card class="dark-theme-card">
 
     <!-- 2. Sub-navigation menu -->
-    <div class="sub-nav-container">
+    <div v-if="!embedded" class="sub-nav-container">
       <el-menu :default-active="'/usermanage/enso_pre'" class="el-menu-dark-theme" mode="horizontal" router>
-        <el-menu-item index="/usermanage/enso_pre">MEPM预测结果</el-menu-item>
-        <el-menu-item index="/usermanage/mjo_pre">MISM预测结果</el-menu-item>
-        <el-menu-item index="/usermanage/rainfall_pre">STRA-Net预测结果</el-menu-item>
+        <el-menu-item index="/usermanage/enso_pre">LSTA-Swin预测结果</el-menu-item>
         <el-menu-item index="/usermanage/convlstm_pre">ConvLSTM预测结果</el-menu-item>
       </el-menu>
     </div>
@@ -17,7 +15,7 @@
 
       <!-- Section 1: Interactive Prediction Interface -->
       <section class="content-section">
-        <h2 class="content-title">MEPM模型预测结果</h2>
+        <h2 class="content-title">LSTA-Swin模型预测结果</h2>
         <div class="prediction-interface">
           <!-- Input Panel -->
           <div class="interface-panel input-panel">
@@ -84,6 +82,9 @@
 // NOTE: Make sure the ECharts `init` theme is set to 'dark'.
 export default {
   name: "predictionPage",
+  props: {
+    embedded: { type: Boolean, default: false }
+  },
   data() {
     return {
       selectedImage: [
@@ -152,12 +153,18 @@ export default {
           { name: 'GFDLaer04', type: 'line', data: [0.90,0.89,0.84,0.80,0.75,0.70,0.68,0.65,0.60,0.52,0.48] }
         ]
       };
-      this.request.get("/echarts/SINTEX_F").then(res => { preOption.series[0].data = res.data; preChart.setOption(preOption); });
-      this.request.get("/echarts/CNN").then(res => { preOption.series[1].data = res.data; preChart.setOption(preOption); });
-      this.request.get("/echarts/Our_model").then(res => { preOption.series[2].data = res.data; preChart.setOption(preOption); });
-      this.request.get("/echarts/Transformer").then(res => { preOption.series[3].data = res.data; preChart.setOption(preOption); });
-      this.request.get("/echarts/GRU").then(res => { preOption.series[4].data = res.data; preChart.setOption(preOption); });
-      this.request.get("/echarts/STANet").then(res => { preOption.series[5].data = res.data; preChart.setOption(preOption); });
+      const presetCurves = {
+        SINTEX_F: [0.89,0.87,0.83,0.80,0.75,0.72,0.70,0.65,0.63,0.60,0.55,0.51,0.48,0.47,0.46,0.45,0.40,0.35,0.32,0.31],
+        CNN: [0.93,0.91,0.88,0.83,0.80,0.75,0.71,0.71,0.70,0.69,0.65,0.64,0.63,0.60,0.58,0.53,0.51,0.45,0.41,0.38],
+        Our_model: [0.94,0.90,0.86,0.84,0.83,0.79,0.77,0.75,0.75,0.71,0.66,0.65,0.63,0.64,0.63,0.62,0.60,0.52,0.48,0.49],
+        Transformer: [0.98,0.94,0.89,0.85,0.81,0.76,0.75,0.74,0.72,0.70,0.68,0.66,0.65,0.62,0.59,0.55,0.53,0.49,0.44,0.41],
+        GRU: [0.93,0.91,0.89,0.86,0.81,0.78,0.73,0.68,0.65,0.61,0.57,0.51,0.50,0.48,0.44,0.41,0.40,0.38,0.37,0.32],
+        STANet: [0.94,0.91,0.90,0.88,0.85,0.80,0.78,0.72,0.69,0.64,0.61,0.57,0.53,0.51,0.49,0.48,0.45,0.43,0.41,0.40]
+      };
+      Object.keys(presetCurves).forEach((name, index) => {
+        preOption.series[index].data = presetCurves[name];
+      });
+      preChart.setOption(preOption);
 
 
       // --- ECharts for 'fur' ---

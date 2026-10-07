@@ -5,10 +5,25 @@ import store from "@/store";
 Vue.use(VueRouter)
 
 const routes = [
+  { path: '/enso/overview', name: 'ENSO总览', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/showcase', name: '动态大屏', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/monitor', name: 'ENSO监测', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/introduction', name: 'ENSO介绍', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/results', name: 'ENSO预测结果', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/data', name: 'ENSO数据', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/resources', name: 'ENSO更多资源', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/models', name: '预测模型', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/models/mepm', name: 'LSTA-Swin预测结果', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/models/convlstm', name: 'ConvLSTM预测结果', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/forecast', name: '预测产品', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/replay', name: '历史回放', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/validation', name: '提前期验证', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/explainability', name: '物理解释', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/data-model', name: '数据与模型', component: () => import('../views/Enso2026.vue') },
   {
     path: '/',
     component: () => import('../views/Manage.vue'),
-    redirect: "/login",
+    redirect: "/enso/overview",
     children: [
       { path: 'home', name: '首页', component: () => import('../views/Home.vue')},
       { path: 'user', name: '账户管理', component: () => import('../views/User.vue')},

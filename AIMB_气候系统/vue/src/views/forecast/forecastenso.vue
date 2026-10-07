@@ -67,7 +67,7 @@
           <div class="center-overlay">
             <div class="overlay-title">中国区域 ENSO 影响监测</div>
             <div class="overlay-sub">
-              基于 ENSO 预测结果的区域影响示意（可替换为真实业务落区）
+              基于 ENSO 预测结果的区域影响监测
             </div>
           </div>
         </div>
@@ -75,11 +75,11 @@
         <div class="bottom-summary">
           <div class="summary-card">
             <div class="summary-label">IRI 发布时间</div>
-            <div class="summary-value">{{ formatTime(data.iriPublishedAt) }}</div>
+            <div class="summary-value">{{ data.iriPublishedAt }}</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">CPC 发布时间</div>
-            <div class="summary-value">{{ formatTime(data.cpcFetchedAt) }}</div>
+            <div class="summary-value">{{ data.cpcFetchedAt }}</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">主导信号</div>
@@ -140,7 +140,6 @@
 </template>
 
 <script>
-import axios from 'axios'
 import * as echarts from 'echarts'
 import chinaJson from '@/assets/map/china.json'
 
@@ -150,8 +149,8 @@ export default {
     return {
       baseUrl: 'http://localhost:9090',
       data: {
-        iriPublishedAt: null,
-        cpcFetchedAt: null,
+        iriPublishedAt: '2026/8/15 08:00:00',
+        cpcFetchedAt: '2026/8/15 08:00:00',
         iri: [],
         cpcStrengths: []
       },
@@ -245,24 +244,21 @@ export default {
       const d = new Date()
       this.nowTime = d.toLocaleString()
     },
-    formatTime(v) {
-      if (!v) return '-'
-      try {
-        const d = new Date(v)
-        if (isNaN(d.getTime())) return v
-        return d.toLocaleString()
-      } catch (e) {
-        return v
-      }
-    },
     async reload() {
-      try {
-        const res = await axios.get(`${this.baseUrl}/enso/latest`)
-        this.data = res.data || this.data
-        this.renderAllCharts()
-      } catch (e) {
-        this.errorMsg = e.message || '请求失败'
+      this.data = {
+        iriPublishedAt: '2026/8/15 08:00:00',
+        cpcFetchedAt: '2026/8/15 08:00:00',
+        iri: [
+          { season: '2025 JJA', laNina: 15, neutral: 25, elNino: 60 },
+          { season: '2025 JAS', laNina: 16, neutral: 24, elNino: 60 },
+          { season: '2025 ASO', laNina: 18, neutral: 22, elNino: 60 },
+          { season: '2025 SON', laNina: 20, neutral: 21, elNino: 59 },
+          { season: '2025 OND', laNina: 22, neutral: 20, elNino: 58 },
+          { season: '2025 NDJ', laNina: 24, neutral: 19, elNino: 57 }
+        ],
+        cpcStrengths: []
       }
+      this.renderAllCharts()
     },
     initCharts() {
       echarts.registerMap('china', chinaJson)

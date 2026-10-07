@@ -4,3 +4,7 @@ torch
 xarray
 netCDF4
 numpy
+requests
+cfgrib
+eccodes
+herbie-data

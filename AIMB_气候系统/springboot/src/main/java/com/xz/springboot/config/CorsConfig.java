@@ -23,6 +23,11 @@ public class CorsConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration corsConfiguration = new CorsConfiguration();
         corsConfiguration.addAllowedOrigin("http://localhost:8080"); // 1 设置访问源地址
+        corsConfiguration.addAllowedOrigin("http://localhost:8081"); // 兼容 8081 端口
+        corsConfiguration.addAllowedOrigin("http://localhost:8082"); // 兼容 8082 端口
+        corsConfiguration.addAllowedOrigin("http://127.0.0.1:8080");
+        corsConfiguration.addAllowedOrigin("http://127.0.0.1:8081");
+        corsConfiguration.addAllowedOrigin("http://127.0.0.1:8082");
         corsConfiguration.addAllowedHeader("*"); // 2 设置访问源请求头
         corsConfiguration.addAllowedMethod("*"); // 3 设置访问源请求方法
         corsConfiguration.setMaxAge(MAX_AGE);

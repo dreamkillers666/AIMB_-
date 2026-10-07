@@ -2,7 +2,7 @@
   <!-- 1. The main container is our standard dark theme card -->
   <el-card class="dark-theme-card">
     <!-- Sub-navigation menu -->
-    <div class="sub-nav-container">
+    <div v-if="!embedded" class="sub-nav-container">
       <el-menu :default-active="'/usermanage/rainfall_pre'" class="el-menu-dark-theme" mode="horizontal" router>
         <el-menu-item index="/usermanage/enso_pre">MEPM预测结果</el-menu-item>
         <el-menu-item index="/usermanage/mjo_pre">MISM预测结果</el-menu-item>
@@ -91,6 +91,9 @@
 <script>
 export default {
   name: "rainfall_pre",
+  props: {
+    embedded: { type: Boolean, default: false }
+  },
   data() {
     return {
       // Manages all input factor cards

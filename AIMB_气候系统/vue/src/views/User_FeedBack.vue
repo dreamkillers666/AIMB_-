@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-card style="margin-top: 0px">
-      <div style="color: #666">
+      <div style="color: #cbd5e1">
         <div style="margin: 10px 0">
           <el-input size="small" style="width: 300px" placeholder="请输入名称" suffix-icon="el-icon-search" v-model="name"></el-input>
           <el-button class="ml-5" type="primary" @click="load" size="small">搜索</el-button>

@@ -3,7 +3,7 @@
   <el-card class="dark-theme-card">
 
     <!-- 2. Sub-navigation menu -->
-    <div class="sub-nav-container">
+    <div v-if="!embedded" class="sub-nav-container">
       <el-menu :default-active="'/usermanage/mjo_pre'" class="el-menu-dark-theme" mode="horizontal" router>
         <el-menu-item index="/usermanage/enso_pre">MEPM预测结果</el-menu-item>
         <el-menu-item index="/usermanage/mjo_pre">MISM预测结果</el-menu-item>
@@ -96,6 +96,9 @@
 // Ensure the ECharts `init` theme is set to 'dark'.
 export default {
   name: "mjo_pre", // Corrected name
+  props: {
+    embedded: { type: Boolean, default: false }
+  },
   data() {
     return {
       dropdowns: [{ value: "one" }],

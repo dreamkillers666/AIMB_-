@@ -4,11 +4,11 @@
 
     <!-- 2. Sub-navigation menu -->
     <div class="sub-nav-container">
-      <el-menu :default-active="'/usermanage/enso_data'" class="el-menu-dark-theme" mode="horizontal" router>
-        <el-menu-item index="/usermanage/enso_introduce">ENSO介绍</el-menu-item>
-        <el-menu-item index="/usermanage/enso_forecast">预测结果</el-menu-item>
-        <el-menu-item index="/usermanage/enso_data">数据</el-menu-item>
-        <el-menu-item index="/usermanage/enso_resource">更多资源</el-menu-item>
+      <el-menu :default-active="$route.path" class="el-menu-dark-theme" mode="horizontal" router>
+        <el-menu-item :index="sectionRoute($route.path, 'introduction')">ENSO介绍</el-menu-item>
+        <el-menu-item :index="sectionRoute($route.path, 'results')">预测结果</el-menu-item>
+        <el-menu-item :index="sectionRoute($route.path, 'data')">数据</el-menu-item>
+        <el-menu-item :index="sectionRoute($route.path, 'resources')">更多资源</el-menu-item>
       </el-menu>
     </div>
 
@@ -39,10 +39,12 @@
 </template>
 
 <script>
-// --- Script 部分保持不变 ---
+import ensoSectionRoute from '@/utils/ensoSectionRoutes'
+
 export default {
   // A more accurate name for the component
   name: "enso_data",
+  methods: { sectionRoute: ensoSectionRoute },
   data() {
     return {
       tableData: [

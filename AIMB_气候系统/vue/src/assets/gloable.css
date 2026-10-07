@@ -15,3 +15,341 @@ html,body{
 .pd-10{
     padding: 10px 0;
 }
+
+/* ===================== 深色海洋主题公共变量 ===================== */
+:root {
+    --bg-gradient: linear-gradient(135deg, #0f172a, #0c0c1e);
+    --bg-card: rgba(20, 30, 50, 0.75);
+    --bg-card-solid: #1e293b;
+    --bg-sidebar: rgba(15, 23, 42, 0.95);
+    --bg-header: rgba(20, 30, 50, 0.75);
+    --border-color: rgba(100, 116, 139, 0.3);
+    --border-color-strong: rgba(100, 116, 139, 0.5);
+    --text-primary: #e0e7ff;
+    --text-secondary: #cbd5e1;
+    --text-muted: #64748b;
+    --accent-blue: #58a6ff;
+    --accent-cyan: #67e8f9;
+    --accent-warm: #f7ba1e;
+    --accent-success: #67c23a;
+    --accent-danger: #f56c6c;
+    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2);
+    --blur: blur(12px);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --transition: all 0.3s ease;
+}
+
+/* ===================== 管理端 Element 组件深色覆盖 ===================== */
+
+/* --- Card --- */
+.admin-dark .el-card {
+    background-color: var(--bg-card) !important;
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
+    border: 1px solid var(--border-color-strong) !important;
+    box-shadow: var(--shadow-card);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+}
+.admin-dark .el-card__header {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    color: var(--accent-blue);
+    font-weight: bold;
+}
+.admin-dark .el-card__body {
+    color: var(--text-primary);
+}
+
+/* --- Table --- */
+.admin-dark .el-table {
+    background-color: transparent !important;
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-table::before,
+.admin-dark .el-table--border::after {
+    background-color: var(--border-color) !important;
+}
+.admin-dark .el-table th,
+.admin-dark .el-table th.is-leaf {
+    background-color: rgba(30, 41, 59, 0.6) !important;
+    color: var(--accent-blue) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+}
+.admin-dark .el-table td {
+    border-bottom: 1px solid var(--border-color) !important;
+}
+.admin-dark .el-table--striped .el-table__body tr.el-table__row--striped td {
+    background-color: rgba(30, 41, 59, 0.3) !important;
+}
+.admin-dark .el-table__body tr:hover > td {
+    background-color: rgba(88, 166, 255, 0.08) !important;
+}
+.admin-dark .el-table--border td,
+.admin-dark .el-table--border th {
+    border-right: 1px solid var(--border-color) !important;
+}
+.admin-dark .el-table .headerBg {
+    background-color: rgba(30, 41, 59, 0.6) !important;
+    color: var(--accent-blue) !important;
+}
+.admin-dark .el-table--enable-row-transition .el-table__body td {
+    background-color: transparent !important;
+}
+
+/* --- Pagination --- */
+.admin-dark .el-pagination {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-pagination button:disabled {
+    background-color: transparent !important;
+    color: var(--text-muted) !important;
+}
+.admin-dark .el-pagination button,
+.admin-dark .el-pagination .el-pager li {
+    background-color: transparent !important;
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-pagination .el-pager li.active {
+    color: var(--accent-cyan) !important;
+}
+.admin-dark .el-pagination .el-pager li:hover,
+.admin-dark .el-pagination button:hover {
+    color: var(--accent-cyan) !important;
+}
+
+/* --- Input / Select --- */
+.admin-dark .el-input__inner,
+.admin-dark .el-textarea__inner {
+    background-color: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid var(--border-color-strong) !important;
+    color: var(--text-primary) !important;
+}
+.admin-dark .el-input__inner::placeholder {
+    color: var(--text-muted) !important;
+}
+.admin-dark .el-input__inner:focus {
+    border-color: var(--accent-blue) !important;
+}
+.admin-dark .el-input--prefix .el-input__inner {
+    padding-left: 30px;
+}
+.admin-dark .el-input__prefix {
+    color: var(--text-muted) !important;
+}
+.admin-dark .el-select .el-input__inner {
+    color: var(--text-primary) !important;
+}
+
+/* --- Select dropdown --- */
+.admin-dark .el-select-dropdown {
+    background-color: var(--bg-card-solid) !important;
+    border: 1px solid var(--border-color-strong) !important;
+}
+.admin-dark .el-select-dropdown__item {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-select-dropdown__item:hover {
+    background-color: rgba(88, 166, 255, 0.1) !important;
+}
+.admin-dark .el-select-dropdown__item.selected {
+    color: var(--accent-cyan) !important;
+}
+
+/* --- Button reset (admin pages use type=primary/warning/danger) --- */
+.admin-dark .el-button--primary {
+    background-color: rgba(88, 166, 255, 0.15) !important;
+    border-color: rgba(88, 166, 255, 0.5) !important;
+    color: var(--accent-blue) !important;
+}
+.admin-dark .el-button--primary:hover {
+    background-color: rgba(88, 166, 255, 0.25) !important;
+    border-color: var(--accent-blue) !important;
+}
+.admin-dark .el-button--warning {
+    background-color: rgba(247, 186, 30, 0.15) !important;
+    border-color: rgba(247, 186, 30, 0.5) !important;
+    color: var(--accent-warm) !important;
+}
+.admin-dark .el-button--warning:hover {
+    background-color: rgba(247, 186, 30, 0.25) !important;
+}
+.admin-dark .el-button--danger {
+    background-color: rgba(245, 108, 108, 0.15) !important;
+    border-color: rgba(245, 108, 108, 0.5) !important;
+    color: var(--accent-danger) !important;
+}
+.admin-dark .el-button--danger:hover {
+    background-color: rgba(245, 108, 108, 0.25) !important;
+}
+.admin-dark .el-button--success {
+    background-color: rgba(103, 194, 58, 0.15) !important;
+    border-color: rgba(103, 194, 58, 0.5) !important;
+    color: var(--accent-success) !important;
+}
+.admin-dark .el-button--success:hover {
+    background-color: rgba(103, 194, 58, 0.25) !important;
+}
+
+/* --- Dialog --- */
+.admin-dark .el-dialog {
+    background-color: var(--bg-card-solid) !important;
+    border: 1px solid var(--border-color-strong) !important;
+    border-radius: var(--radius) !important;
+}
+.admin-dark .el-dialog__title {
+    color: var(--accent-blue) !important;
+}
+.admin-dark .el-dialog__body {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-dialog__header {
+    border-bottom: 1px solid var(--border-color);
+}
+.admin-dark .el-dialog__footer {
+    border-top: 1px solid var(--border-color);
+}
+.admin-dark .el-dialog__headerbtn .el-dialog__close {
+    color: var(--text-muted) !important;
+}
+.admin-dark .el-dialog__headerbtn:hover .el-dialog__close {
+    color: var(--accent-cyan) !important;
+}
+
+/* --- Form labels --- */
+.admin-dark .el-form-item__label {
+    color: var(--text-secondary) !important;
+}
+
+/* --- Breadcrumb --- */
+.admin-dark .el-breadcrumb__inner,
+.admin-dark .el-breadcrumb__inner a {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-breadcrumb__item:last-child .el-breadcrumb__inner {
+    color: var(--accent-cyan) !important;
+}
+
+/* --- Dropdown menu --- */
+.admin-dark .el-dropdown-menu {
+    background-color: var(--bg-card-solid) !important;
+    border: 1px solid var(--border-color-strong) !important;
+}
+.admin-dark .el-dropdown-menu__item {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-dropdown-menu__item:hover {
+    background-color: rgba(88, 166, 255, 0.1) !important;
+}
+.admin-dark .el-dropdown-menu__item--divided {
+    border-top-color: var(--border-color-strong) !important;
+}
+
+/* --- Popconfirm / Tooltip --- */
+.admin-dark .el-popconfirm,
+.admin-dark .el-tooltip__popper {
+    background-color: var(--bg-card-solid) !important;
+    color: var(--text-secondary) !important;
+}
+
+/* --- Tag --- */
+.admin-dark .el-tag {
+    background-color: rgba(88, 166, 255, 0.15) !important;
+    border-color: rgba(88, 166, 255, 0.4) !important;
+    color: var(--accent-blue) !important;
+}
+
+/* --- Divider --- */
+.admin-dark .el-divider {
+    background-color: var(--border-color) !important;
+}
+.admin-dark .el-divider__text {
+    background-color: transparent !important;
+    color: var(--text-secondary) !important;
+}
+
+/* --- Message / MessageBox (global, not just admin) --- */
+.el-message {
+    background-color: var(--bg-card-solid) !important;
+    border: 1px solid var(--border-color-strong) !important;
+}
+.el-message__content {
+    color: var(--text-primary) !important;
+}
+.el-message-box {
+    background-color: var(--bg-card-solid) !important;
+    border: 1px solid var(--border-color-strong) !important;
+    border-radius: var(--radius) !important;
+}
+.el-message-box__title {
+    color: var(--accent-blue) !important;
+}
+.el-message-box__message {
+    color: var(--text-secondary) !important;
+}
+
+/* --- Loading --- */
+.admin-dark .el-loading-mask {
+    background-color: rgba(15, 23, 42, 0.7) !important;
+}
+.admin-dark .el-loading-spinner .el-loading-text {
+    color: var(--accent-cyan) !important;
+}
+.admin-dark .el-loading-spinner .path {
+    stroke: var(--accent-cyan) !important;
+}
+
+/* --- Upload --- */
+.admin-dark .el-upload-dragger {
+    background-color: rgba(15, 23, 42, 0.6) !important;
+    border-color: var(--border-color-strong) !important;
+}
+
+/* --- Switch --- */
+.admin-dark .el-switch.is-checked .el-switch__core {
+    border-color: var(--accent-blue) !important;
+    background-color: var(--accent-blue) !important;
+}
+
+/* --- Drawer --- */
+.admin-dark .el-drawer {
+    background-color: var(--bg-card-solid) !important;
+}
+
+/* --- Menu (admin sidebar override) --- */
+.admin-dark .el-menu {
+    background-color: transparent !important;
+}
+.admin-dark .el-menu-item,
+.admin-dark .el-submenu__title {
+    color: var(--text-secondary) !important;
+}
+.admin-dark .el-menu-item:hover,
+.admin-dark .el-submenu__title:hover {
+    background-color: rgba(88, 166, 255, 0.1) !important;
+    color: #fff !important;
+}
+.admin-dark .el-menu-item.is-active {
+    color: var(--accent-cyan) !important;
+}
+.admin-dark .el-submenu__title i,
+.admin-dark .el-menu-item i {
+    color: inherit !important;
+}
+
+/* --- Scrollbar (admin) --- */
+.admin-dark ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.admin-dark ::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.3);
+}
+.admin-dark ::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.4);
+    border-radius: 3px;
+}
+.admin-dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.6);
+}
