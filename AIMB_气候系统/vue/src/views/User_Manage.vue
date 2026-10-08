@@ -289,7 +289,8 @@ export default {
 
 /* 6. 主内容区域 */
 .main-content {
-  width: 1200px; /* 您可以根据需要调整内容宽度 */
+  width: 100%;
+  max-width: 1200px;
   margin: 24px auto; /* 上下边距，并水平居中 */
   flex: 1; /* 占据剩余所有空间 */
 }

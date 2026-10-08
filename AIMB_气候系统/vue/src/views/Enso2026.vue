@@ -66,12 +66,12 @@
 
     <section v-else-if="pageKey === 'replay'" class="content-grid">
       <article class="panel controls-panel"><div class="panel-heading"><div><h2>2025-2026 历史回放</h2><p>选择起报月份</p></div></div><el-select v-model="replayStart"><el-option v-for="m in replayOptions" :key="m" :label="m" :value="m" /></el-select><el-button type="primary" :loading="loading" @click="loadReplay">加载回放</el-button></article>
-      <article class="panel chart-panel"><div class="panel-heading"><div><h2>{{ replayStart }} 起报回放轨迹</h2><p>Niño3.4 指数距平（℃）</p></div><div><el-button size="mini" icon="el-icon-download" @click="exportJson">JSON</el-button><el-button size="mini" icon="el-icon-document" @click="exportCsv">CSV</el-button></div></div><div ref="chart" class="chart"></div></article>
+      <article class="panel chart-panel"><div class="panel-heading"><div><h2>{{ replayStart }} 起报回放轨迹</h2><p>预测 Niño3.4 月指数 vs 观测 Niño3.4 月指数（℃）</p></div><div><el-button size="mini" icon="el-icon-download" @click="exportJson">JSON</el-button><el-button size="mini" icon="el-icon-document" @click="exportCsv">CSV</el-button></div></div><div ref="chart" class="chart"></div></article>
     </section>
 
     <section v-else-if="pageKey === 'validation'" class="panel table-panel">
       <div class="panel-heading">
-        <div><h2>逐提前期验证与基线比较</h2><p v-if="comparisonReplayStart">整体验证与 {{ comparisonReplayStart }} 回放案例</p></div>
+        <div><h2>逐提前期验证与实际比较</h2><p v-if="comparisonReplayStart">整体验证与 {{ comparisonReplayStart }} 回放案例</p></div>
         <div class="validation-actions">
           <el-button size="mini" type="primary" plain icon="el-icon-data-analysis" @click="openComparisonDialog">选择历史回放对比</el-button>
           <el-button v-if="comparisonReplayStart" size="mini" icon="el-icon-video-play" @click="openReplayComparison">查看回放</el-button>
@@ -235,12 +235,12 @@ export default {
     },
     replayPointForLead(series, lead) {
       const point = series.find(item => item.leadMonth === lead)
-      const hasObservation = point && Number.isFinite(point.observed)
+      const hasObservation = point && Number.isFinite(point.observedNino34)
       return {
         replayMonth: point ? point.month : '',
         replayForecast: point ? point.value : null,
-        replayObserved: hasObservation ? point.observed : null,
-        replayError: hasObservation ? Number((point.value - point.observed).toFixed(2)) : null
+        replayObserved: hasObservation ? point.observedNino34 : null,
+        replayError: hasObservation ? Number((point.value - point.observedNino34).toFixed(2)) : null
       }
     },
     formatValidationValue(value) { return Number.isFinite(value) ? value.toFixed(2) : '—' },
@@ -271,14 +271,14 @@ export default {
       const option = {
         backgroundColor: 'transparent', animation: false,
         tooltip: { trigger: 'axis', valueFormatter: value => value + ' ℃' },
-        legend: { data: replay ? ['预测值', '参考 ONI'] : (interval ? ['预测值', '下界', '上界'] : ['预测值']), textStyle: { color: '#bcc8d1' }, top: 4 },
+        legend: { data: replay ? ['预测 Niño3.4 月指数', '观测 Niño3.4 月指数'] : (interval ? ['预测值', '下界', '上界'] : ['预测值']), textStyle: { color: '#bcc8d1' }, top: 4 },
         grid: { left: 48, right: 22, top: 42, bottom: 36 },
         xAxis: { type: 'category', data: series.map(p => p.month), axisLabel: { color: '#a4b0ba', interval: 2 }, axisLine: { lineStyle: { color: '#41505b' } } },
         yAxis: { type: 'value', name: '℃', nameTextStyle: { color: '#a4b0ba' }, axisLabel: { color: '#a4b0ba' }, splitLine: { lineStyle: { color: 'rgba(150,170,180,.12)' } } },
-        series: [{ name: '预测值', type: 'line', smooth: true, symbol: 'none', data: series.map(p => p.value), lineStyle: { color: '#38c6b0', width: 3 }, areaStyle: { color: 'rgba(56,198,176,.12)' } }]
+        series: [{ name: replay ? '预测 Niño3.4 月指数' : '预测值', type: 'line', smooth: true, symbol: 'none', data: series.map(p => p.value), lineStyle: { color: '#38c6b0', width: 3 }, areaStyle: { color: 'rgba(56,198,176,.12)' } }]
       }
       if (interval) option.series.push({ name: '下界', type: 'line', symbol: 'none', lineStyle: { type: 'dashed', color: '#e4b75c' }, data: series.map(p => p.lower) }, { name: '上界', type: 'line', symbol: 'none', lineStyle: { type: 'dashed', color: '#e4b75c' }, data: series.map(p => p.upper) })
-      if (replay) option.series.push({ name: '参考 ONI', type: 'line', connectNulls: false, symbol: 'circle', symbolSize: 5, data: series.map(p => p.observed), lineStyle: { color: '#e4b75c', width: 2, type: 'dashed' }, itemStyle: { color: '#e4b75c' } })
+      if (replay) option.series.push({ name: '观测 Niño3.4 月指数', type: 'line', connectNulls: false, symbol: 'circle', symbolSize: 5, data: series.map(p => p.observedNino34), lineStyle: { color: '#e4b75c', width: 2, type: 'dashed' }, itemStyle: { color: '#e4b75c' } })
       this.chart.setOption(option)
     },
     heatStyle(value) { const t = Math.max(0, Math.min(1, (value + 0.2) / 1.65)); return { backgroundColor: `hsl(${190 - 178 * t}, ${34 + 38 * t}%, ${24 + 31 * t}%)` } },

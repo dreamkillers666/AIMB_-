@@ -29,9 +29,8 @@ const replayOptions = Array.from({ length: 24 }, (_, index) => {
   return `${year}-${month}`
 })
 
-// CPC ONI seasonal values are keyed by their center month (DJF -> January).
-// The published ERSSTv6 table currently ends at JAS 2026, centered on August.
-const observedOni = {
+// 预制的月度 Niño3.4 指数案例值，按目标月份记录，不使用三个月滑动平均 ONI。
+const observedNino34 = {
   '2024-01': 1.8, '2024-02': 1.5, '2024-03': 1.2, '2024-04': 0.8,
   '2024-05': 0.4, '2024-06': 0.2, '2024-07': 0.1, '2024-08': 0.0,
   '2024-09': -0.1, '2024-10': -0.2, '2024-11': -0.3, '2024-12': -0.4,
@@ -61,21 +60,21 @@ const monthDistance = (from, to) => {
   return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth()
 }
 
-const referenceOni = (value) => Object.prototype.hasOwnProperty.call(observedOni, value) ? observedOni[value] : null
-const isObservedMonth = (value) => Object.prototype.hasOwnProperty.call(observedOni, value)
+const referenceNino34 = (value) => Object.prototype.hasOwnProperty.call(observedNino34, value) ? observedNino34[value] : null
+const isObservedMonth = (value) => Object.prototype.hasOwnProperty.call(observedNino34, value)
 
-const latestObservationAtOrBefore = (value) => Object.keys(observedOni)
+const latestObservationAtOrBefore = (value) => Object.keys(observedNino34)
   .filter(month => month <= value)
   .sort()
   .slice(-1)
-  .map(month => ({ month, value: observedOni[month] }))[0] || null
+  .map(month => ({ month, value: observedNino34[month] }))[0] || null
 
 const estimateTendency = (throughMonth) => {
-  const history = Object.keys(observedOni)
+  const history = Object.keys(observedNino34)
     .filter(month => month <= throughMonth)
     .sort()
     .slice(-4)
-    .map(month => ({ month, value: observedOni[month] }))
+    .map(month => ({ month, value: observedNino34[month] }))
   if (history.length < 2) return 0
 
   const xMean = (history.length - 1) / 2
@@ -86,7 +85,7 @@ const estimateTendency = (throughMonth) => {
 }
 
 const hindcastValue = (start, targetMonth) => {
-  // ONI is centered on a three-month season, so use observations published by the issue month.
+  // 回放预测与观测都使用同一月度 Niño3.4 指数口径。
   const latest = latestObservationAtOrBefore(addMonths(start, -2)) || latestObservationAtOrBefore('2026-08')
   if (!latest) return null
 
@@ -109,7 +108,7 @@ const makeReplaySeries = (start) => {
       leadMonth,
       month: targetMonth,
       value,
-      observed: isObservedMonth(targetMonth) ? referenceOni(targetMonth) : null,
+      observedNino34: isObservedMonth(targetMonth) ? referenceNino34(targetMonth) : null,
       lower: value == null ? null : Number((value - spread).toFixed(2)),
       upper: value == null ? null : Number((value + spread).toFixed(2))
     }
@@ -117,9 +116,9 @@ const makeReplaySeries = (start) => {
 }
 
 const calculateMetrics = (points, lead) => {
-  const evaluated = points.filter(point => Number.isFinite(point.value) && Number.isFinite(point.observed))
+  const evaluated = points.filter(point => Number.isFinite(point.value) && Number.isFinite(point.observedNino34))
   const predicted = evaluated.map(point => point.value)
-  const reference = evaluated.map(point => point.observed)
+  const reference = evaluated.map(point => point.observedNino34)
   if (!evaluated.length) return { lead, pcc: null, mae: null, rmse: null, sampleCount: 0 }
 
   const meanPredicted = predicted.reduce((sum, value) => sum + value, 0) / predicted.length
@@ -182,7 +181,7 @@ export default {
       leadMonths: 20,
       indexName: 'Niño3.4 / ONI',
       series: makeReplaySeries(replayStart),
-      referenceSource: 'NOAA CPC ONI',
+      referenceSource: '预制月度 Niño3.4 指数观测案例',
       observedThrough: '2026-08'
     }
   },

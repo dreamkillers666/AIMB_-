@@ -3,8 +3,15 @@
 
     <!-- HERO 实时主场景：Ventusky 式流动海洋地图 -->
         <section class="hero">
-          <!-- Leaflet 地图容器（流动风场粒子层 + 暗色海洋瓦片） -->
-          <div ref="mapEl" class="hero-map"></div>
+          <EnsoGlobe
+            v-if="displayMode === '3d'"
+            :wind-data="windData || []"
+            :sst-data="sstData"
+            :layer="currentLayer"
+            @unavailable="handleGlobeUnavailable"
+          />
+          <!-- Leaflet 2D 地图保留为可切换视图 -->
+          <div v-show="displayMode === '2d'" ref="mapEl" class="hero-map"></div>
           <div class="hero-map-vignette"></div>
 
           <!-- 收起状态标签：贴在 hero 最左边缘 -->
@@ -99,6 +106,23 @@
                 </span>
               </div>
             </div>
+          </div>
+
+          <div class="view-mode-switcher" role="tablist" aria-label="大屏显示模式">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="displayMode === '3d'"
+              :class="{ active: displayMode === '3d' }"
+              @click="switchDisplayMode('3d')"
+            >3D</button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="displayMode === '2d'"
+              :class="{ active: displayMode === '2d' }"
+              @click="switchDisplayMode('2d')"
+            >2D</button>
           </div>
 
           <!-- 图层切换器：风场 / 海温 / 叠加（地图右上角） -->
@@ -241,6 +265,7 @@
 <script>
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import EnsoGlobe from '../components/EnsoGlobe.vue';
 import presetSst from '../data/presetSst.json';
 // leaflet-velocity 依赖全局 L，先挂到 window 再加载
 if (!window.L) window.L = L;
@@ -623,6 +648,7 @@ const SstOverlayLayer = L.Layer.extend({
 
 export default {
   name: "introducePage",
+  components: { EnsoGlobe },
   data() {
     return {
       user: localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : {},
@@ -657,6 +683,7 @@ export default {
       windStatus: { source: "mock", refTime: null },
       windRefTime: null,
       currentLayer: "wind",
+      displayMode: "3d",
       hasSst: false,
       windData: null,
       sstData: null,
@@ -755,9 +782,8 @@ export default {
   mounted() {
     this.$nextTick(() => {
       this.updateSlidesPerView();
-      this.initMap();
-      // 展示模式直接使用固定风场案例，不请求实时服务
       this.applyMockWindData();
+      if (this.displayMode === "2d") this.initMap();
       this.initCharts();
       this.setupResizeListener();
       this.startPolling();
@@ -1017,7 +1043,7 @@ export default {
     // ===================== Leaflet 流动风场地图 =====================
     initMap() {
       const el = this.$refs.mapEl;
-      if (!el) return;
+      if (!el || this.map) return;
 
       this.map = L.map(el, {
         zoomControl: false,
@@ -1118,6 +1144,15 @@ export default {
 
       const u = new Array(nx * ny);
       const v = new Array(nx * ny);
+      const vortices = [
+        { longitude: 300, latitude: 44, strength: 12, radiusX: 27, radiusY: 19 },
+        { longitude: 350, latitude: 58, strength: -10, radiusX: 24, radiusY: 17 },
+        { longitude: 235, latitude: 28, strength: -11, radiusX: 23, radiusY: 17 },
+        { longitude: 75, latitude: 46, strength: 10, radiusX: 26, radiusY: 18 },
+        { longitude: 140, latitude: -38, strength: 12, radiusX: 26, radiusY: 19 },
+        { longitude: 20, latitude: -52, strength: -11, radiusX: 24, radiusY: 18 },
+        { longitude: 250, latitude: -22, strength: 9, radiusX: 22, radiusY: 16 },
+      ];
 
       for (let j = 0; j < ny; j++) {
         const lat = la1 - j * dy;
@@ -1126,25 +1161,39 @@ export default {
           const idx = j * nx + i;
           const latRad = (lat * Math.PI) / 180;
 
-          // 赤道东风带（信风）：热带偏东风
-          const trade = -Math.exp(-Math.pow(lat / 24, 2)) * 14;
-          // 中纬度西风带：南北半球各一条
+          const lonRad = (lon * Math.PI) / 180;
+          // 保留行星风带的大尺度结构，同时加入经向波动，避免粒子收敛成规则纬向线。
+          const trade = -Math.exp(-Math.pow(lat / 24, 2)) * 4;
           const westerly =
-            Math.exp(-Math.pow((lat - 46) / 16, 2)) * 16 +
-            Math.exp(-Math.pow((lat + 46) / 16, 2)) * 16;
-          // 极地东风带
+            Math.exp(-Math.pow((lat - 46) / 16, 2)) * 5 +
+            Math.exp(-Math.pow((lat + 46) / 16, 2)) * 5;
           const polar =
-            -Math.exp(-Math.pow((lat - 78) / 12, 2)) * 9 -
-            Math.exp(-Math.pow((lat + 78) / 12, 2)) * 9;
-          // 波浪状扰动，让风带微微摆动、更自然
-          const meander = Math.sin((lon * Math.PI) / 180 * 2 + lat * 0.35) * 3.5;
+            -Math.exp(-Math.pow((lat - 78) / 12, 2)) * 2.5 -
+            Math.exp(-Math.pow((lat + 78) / 12, 2)) * 2.5;
+          const meander =
+            Math.sin(lonRad * 2 + latRad * 1.7) * 5 +
+            Math.cos(lonRad * 3 - latRad * 2.4) * 2.5;
+          let vortexU = 0;
+          let vortexV = 0;
+          vortices.forEach((vortex) => {
+            const deltaLongitude = ((lon - vortex.longitude + 540) % 360) - 180;
+            const x = deltaLongitude * Math.cos((vortex.latitude * Math.PI) / 180);
+            const y = lat - vortex.latitude;
+            const xScaled = x / vortex.radiusX;
+            const yScaled = y / vortex.radiusY;
+            const envelope = Math.exp(-0.5 * (xScaled * xScaled + yScaled * yScaled));
+            vortexU -= vortex.strength * yScaled * envelope;
+            vortexV += vortex.strength * xScaled * envelope;
+          });
 
-          u[idx] = trade + westerly + polar + meander;
+          u[idx] = trade + westerly + polar + meander + vortexU;
 
-          // v 分量：南北向的蜿蜒流动
+          // 南北向波动让流线具有经向交换，不只沿纬线平移。
           v[idx] =
-            Math.sin((lon * Math.PI) / 180 * 3 + lat * 0.5) * 3 +
-            Math.cos(latRad * 4) * 2;
+            Math.sin(lonRad * 2 + latRad * 2.5) * 5 +
+            Math.cos(lonRad * 3 - latRad * 1.8) * 3 +
+            Math.sin(latRad * 4 + lonRad) * 2.5 +
+            vortexV;
         }
       }
 
@@ -1265,6 +1314,27 @@ export default {
     },
 
     // ===================== 图层切换 =====================
+    switchDisplayMode(mode) {
+      if (mode !== "2d" && mode !== "3d") return;
+      if (mode === this.displayMode) return;
+      this.displayMode = mode;
+      if (mode === "2d") {
+        this.$nextTick(() => {
+          if (!this.map) {
+            this.initMap();
+            this.applyMockWindData();
+          } else {
+            this.map.invalidateSize();
+          }
+          this.applyLayerVisibility();
+        });
+      }
+    },
+
+    handleGlobeUnavailable() {
+      if (this.displayMode === "3d") this.switchDisplayMode("2d");
+    },
+
     switchLayer(layer) {
       if (layer === this.currentLayer) return;
       if (layer !== "wind" && !this.hasSst) return; // 海温/叠加模式需要 sst 数据
@@ -1515,7 +1585,7 @@ export default {
       Object.keys(this.charts).forEach((key) => {
         if (this.charts[key]) this.charts[key].resize();
       });
-      if (this.map) this.map.invalidateSize();
+      if (this.map && this.displayMode === "2d") this.map.invalidateSize();
     },
 
     disposeCharts() {
@@ -1659,6 +1729,38 @@ export default {
   inset: 0;
   z-index: 0;
   background: transparent;
+}
+
+/* 3D 球面由独立 Three.js 组件渲染，和 2D 地图共用同一大屏区域。 */
+.view-mode-switcher {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  padding: 3px;
+  border: 1px solid rgba(148, 180, 220, 0.3);
+  background: rgba(8, 22, 46, 0.82);
+  box-shadow: 0 8px 24px rgba(4, 14, 32, 0.35);
+  pointer-events: auto;
+}
+
+.view-mode-switcher button {
+  min-width: 48px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: #a9c6e4;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.view-mode-switcher button:hover,
+.view-mode-switcher button.active {
+  background: rgba(72, 168, 177, 0.28);
+  color: #fff;
 }
 
 /* 轻量暗角：让面板区域更沉、地图边缘自然过渡，不遮挡地图主体 */
@@ -2165,7 +2267,7 @@ export default {
 /* 图层切换器：风场 / 海温（地图右上角，海洋风玻璃胶囊） */
 .layer-switcher {
   position: absolute;
-  top: 16px;
+  top: 62px;
   right: 16px;
   z-index: 3;
   display: flex;
@@ -2213,7 +2315,7 @@ export default {
 /* 海温色标图例（切换器下方） */
 .sst-legend {
   position: absolute;
-  top: 64px;
+  top: 110px;
   right: 16px;
   z-index: 3;
   padding: 10px 12px;
@@ -2534,6 +2636,18 @@ export default {
     padding: 40px 24px 80px;
     gap: 32px;
     justify-content: flex-start;
+  }
+  .view-mode-switcher {
+    top: 12px;
+    right: 12px;
+  }
+  .layer-switcher {
+    top: 56px;
+    right: 12px;
+  }
+  .sst-legend {
+    top: 102px;
+    right: 12px;
   }
   .hero-two-col {
     max-width: 100%;
