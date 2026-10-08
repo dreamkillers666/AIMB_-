@@ -1,7 +1,7 @@
 <template>
   <div class="grid-data-container">
     <!-- =========== Card 1: 文件管理 =========== -->
-    <el-card class="file-management-card">
+    <el-card v-if="!visualizationOnly" class="file-management-card">
       <template #header>
         <div class="card-header">
           <span class="card-title">网格数据文件管理</span>
@@ -191,6 +191,7 @@
                 style="width: 300px;"
                 filterable
                 clearable
+                @change="loadVariableInfo"
             >
               <el-option
                   v-for="item in availableVariables"
@@ -212,6 +213,19 @@
               {{ uiState === 'plotting' ? '生成中...' : '开始可视化' }}
               <i class="el-icon-picture" v-if="uiState !== 'plotting'"></i>
             </el-button>
+          </div>
+          <div v-if="variableInfo && variableInfo.timeDimensionSize > 1" class="time-selection">
+            <label>时间片</label>
+            <el-input-number
+                v-model="timeIndex"
+                :min="0"
+                :max="variableInfo.maxTimeIndex"
+                :step="1"
+                :disabled="uiState === 'plotting'"
+                controls-position="right"
+                @change="onTimeIndexChange"
+            />
+            <span>共 {{ variableInfo.timeDimensionSize }} 个</span>
           </div>
         </div>
 
@@ -248,6 +262,7 @@
                 <el-descriptions-item label="变量名称">{{ imageInfo.variableName }}</el-descriptions-item>
                 <el-descriptions-item label="文件名称">{{ imageInfo.fileName }}</el-descriptions-item>
                 <el-descriptions-item label="生成时间">{{ imageInfo.generateTime }}</el-descriptions-item>
+                <el-descriptions-item label="时间片">{{ imageInfo.timeIndex }}</el-descriptions-item>
                 <el-descriptions-item label="数据范围">{{ imageInfo.dataRange }}</el-descriptions-item>
               </el-descriptions>
             </div>
@@ -270,6 +285,9 @@
 <script>
 export default {
   name: "GridData",
+  props: {
+    visualizationOnly: { type: Boolean, default: false }
+  },
   data() {
     return {
       // 文件管理数据
@@ -291,22 +309,30 @@ export default {
       availableVariables: [],
       selectedVariable: '',
       tempFileId: '',
+      variableInfo: null,
+      timeIndex: 0,
       predictionImageSrc: '',
       vizFileList: [],
       imageLoading: false,
       imageInfo: null,
 
       // 上传配置
-      uploadActionForTable: 'http://localhost:9090/griddata/upload',
-      uploadActionForViz: 'http://localhost:9090/griddata/get-variables',
       uploadHeaders: {},
       uploadStatus: 'idle', // 'idle', 'uploading', 'success', 'error'
-      debugMode: true
+      debugMode: true,
+      gridDataApiBase: (process.env.VUE_APP_GRID_DATA_API_BASE_URL || 'http://localhost:9090').replace(/\/+$/, '')
     }
   },
+  computed: {
+    uploadActionForTable() { return `${this.gridDataApiBase}/griddata/upload` },
+    uploadActionForViz() { return `${this.gridDataApiBase}/griddata/get-variables` }
+  },
   created() {
-    this.load();
+    if (!this.visualizationOnly) this.load();
     this.initUploadHeaders();
+  },
+  beforeDestroy() {
+    this.releaseTempFile(this.tempFileId);
   },
   methods: {
     // ==================== 文件管理方法 ====================
@@ -474,6 +500,8 @@ export default {
       if (variables && tempFileId) {
         this.availableVariables = Array.isArray(variables) ? variables : [variables];
         this.tempFileId = tempFileId;
+        this.variableInfo = null;
+        this.timeIndex = 0;
         this.uiState = 'vars-loaded';
         this.selectedVariable = '';
         this.predictionImageSrc = '';
@@ -511,6 +539,31 @@ export default {
       this.resetVisualization();
     },
 
+    async loadVariableInfo(variableName) {
+      this.variableInfo = null;
+      this.timeIndex = 0;
+      this.predictionImageSrc = '';
+      this.imageInfo = null;
+      if (this.uiState !== 'start' && this.uiState !== 'error') this.uiState = 'vars-loaded';
+      if (!variableName || !this.tempFileId) return;
+
+      try {
+        const info = await this.request.post(`${this.gridDataApiBase}/griddata/get-variable-info`, {
+          tempFileId: this.tempFileId,
+          variableName
+        });
+        if (this.selectedVariable === variableName) this.variableInfo = info;
+      } catch (error) {
+        this.$message.error(`读取变量维度失败: ${error.message || '请检查后端服务'}`);
+      }
+    },
+
+    onTimeIndexChange() {
+      this.predictionImageSrc = '';
+      this.imageInfo = null;
+      if (this.uiState === 'plot-success') this.uiState = 'vars-loaded';
+    },
+
     async generatePlot() {
       if (!this.selectedVariable) {
         this.$message.warning("请先选择要可视化的变量");
@@ -521,13 +574,14 @@ export default {
       this.imageLoading = true;
 
       try {
-        const res = await this.request.post("/griddata/visualize", {
+        const res = await this.request.post(`${this.gridDataApiBase}/griddata/visualize`, {
           tempFileId: this.tempFileId,
-          variableName: this.selectedVariable
+          variableName: this.selectedVariable,
+          timeIndex: this.variableInfo && this.variableInfo.timeDimensionSize > 1 ? this.timeIndex : 0
         });
 
         if (res && res.imageUrl) {
-          this.predictionImageSrc = 'http://localhost:9090' + res.imageUrl;
+          this.predictionImageSrc = this.resolveGridDataUrl(res.imageUrl);
           this.uiState = 'plot-success';
 
           // 设置图像信息
@@ -535,7 +589,8 @@ export default {
             variableName: this.selectedVariable,
             fileName: this.vizFileList[0]?.name || '未知文件',
             generateTime: new Date().toLocaleString(),
-            dataRange: '待获取' // 可以从后端返回的数据中获取
+            timeIndex: res.timeIndex == null ? 0 : res.timeIndex,
+            dataRange: res.dataRange || '—'
           };
         } else {
           throw new Error(res?.message || "未能获取图片URL");
@@ -567,13 +622,26 @@ export default {
     },
 
     resetVisualization() {
+      const tempFileId = this.tempFileId;
       this.uiState = 'start';
       this.availableVariables = [];
       this.selectedVariable = '';
       this.tempFileId = '';
+      this.variableInfo = null;
+      this.timeIndex = 0;
       this.predictionImageSrc = '';
       this.vizFileList = [];
       this.imageInfo = null;
+      this.releaseTempFile(tempFileId);
+    },
+
+    releaseTempFile(tempFileId) {
+      if (tempFileId) this.request.post(`${this.gridDataApiBase}/griddata/cleanup`, { tempFileId }).catch(() => {});
+    },
+
+    resolveGridDataUrl(path) {
+      if (/^https?:\/\//i.test(path)) return path;
+      return `${this.gridDataApiBase}${path.startsWith('/') ? '' : '/'}${path}`;
     },
 
     // ==================== 工具方法 ====================
@@ -687,6 +755,15 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.time-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: #606266;
+  font-size: 13px;
 }
 
 .visualization-result {

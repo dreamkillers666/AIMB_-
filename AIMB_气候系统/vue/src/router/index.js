@@ -15,11 +15,12 @@ const routes = [
   { path: '/enso/models', name: '预测模型', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/models/mepm', name: 'LSTA-Swin预测结果', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/models/convlstm', name: 'ConvLSTM预测结果', component: () => import('../views/Enso2026.vue') },
-  { path: '/enso/forecast', name: '预测产品', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/forecast', name: '预测产品', redirect: '/enso/models/mepm' },
   { path: '/enso/replay', name: '历史回放', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/validation', name: '提前期验证', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/explainability', name: '物理解释', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/data-model', name: '数据与模型', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/climate-data', name: '气候 NC 可视化', component: () => import('../views/Enso2026.vue') },
   {
     path: '/',
     component: () => import('../views/Manage.vue'),

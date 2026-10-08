@@ -174,6 +174,10 @@ public class VisualizationService {
      * 支持时间片参数的可视化方法
      */
     public String createPlotFromNetCDF(File ncFile, String variableName, int timeIndex) throws IOException {
+        return createPlotWithStats(ncFile, variableName, timeIndex).getImageUrl();
+    }
+
+    public PlotResult createPlotWithStats(File ncFile, String variableName, int timeIndex) throws IOException {
         // 创建输出目录
         File outputDir = new File(plotOutputDir);
         if (!outputDir.exists()) {
@@ -202,7 +206,7 @@ public class VisualizationService {
             Path outputPath = Paths.get(plotOutputDir, outputFilename);
             ImageIO.write(image, "png", outputPath.toFile());
 
-            return "/generated-plots/" + outputFilename;
+            return new PlotResult("/generated-plots/" + outputFilename, stats);
 
         } catch (Exception e) {
             throw new IOException("可视化处理失败: " + e.getMessage(), e);
@@ -215,6 +219,10 @@ public class VisualizationService {
     private Array readDataArray(Variable dataVar, int timeIndex) throws IOException {
         int rank = dataVar.getRank();
         int[] shape = dataVar.getShape();
+
+        if (timeIndex < 0) {
+            throw new IOException("时间片索引不能为负数");
+        }
 
         System.out.println("变量 '" + dataVar.getShortName() + "' 的维度: " + rank +
                 ", 形状: " + java.util.Arrays.toString(shape) +
@@ -262,14 +270,14 @@ public class VisualizationService {
      */
     private DataStats calculateDataStats(Array data) {
         float min = Float.MAX_VALUE;
-        float max = Float.MIN_VALUE;
+        float max = -Float.MAX_VALUE;
         int validCount = 0;
-        float sum = 0;
+        double sum = 0;
 
         // 第一次遍历：计算最小、最大值
         for (int i = 0; i < data.getSize(); i++) {
             float val = data.getFloat(i);
-            if (!Float.isNaN(val)) {
+            if (Float.isFinite(val)) {
                 if (val < min) min = val;
                 if (val > max) max = val;
                 sum += val;
@@ -283,7 +291,7 @@ public class VisualizationService {
             max = 1;
         }
 
-        return new DataStats(min, max, validCount > 0 ? sum / validCount : Float.NaN, validCount);
+        return new DataStats(min, max, validCount > 0 ? (float) (sum / validCount) : Float.NaN, validCount);
     }
 
     /**
@@ -347,12 +355,13 @@ public class VisualizationService {
      * 颜色映射方法
      */
     private Color getColorForValue(float value, float min, float max) {
-        if (Float.isNaN(value)) {
+        if (!Float.isFinite(value)) {
             return Color.GRAY; // 使用灰色表示无效值
         }
 
         // 将当前值归一化到 0.0f 到 1.0f 的范围
-        float normalized = (value - min) / (max - min);
+        float normalized = max == min ? 0.5f : (value - min) / (max - min);
+        normalized = Math.max(0, Math.min(1, normalized));
 
         // 定义色谱的关键颜色点 (0.0=蓝, 0.5=绿, 1.0=红)
         Color c1 = Color.BLUE;
@@ -403,5 +412,27 @@ public class VisualizationService {
             this.mean = mean;
             this.validCount = validCount;
         }
+    }
+
+    public static class PlotResult {
+        private final String imageUrl;
+        private final float min;
+        private final float max;
+        private final float mean;
+        private final int validCount;
+
+        PlotResult(String imageUrl, DataStats stats) {
+            this.imageUrl = imageUrl;
+            this.min = stats.min;
+            this.max = stats.max;
+            this.mean = stats.mean;
+            this.validCount = stats.validCount;
+        }
+
+        public String getImageUrl() { return imageUrl; }
+        public float getMin() { return min; }
+        public float getMax() { return max; }
+        public float getMean() { return mean; }
+        public int getValidCount() { return validCount; }
     }
 }

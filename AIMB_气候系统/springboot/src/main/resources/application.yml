@@ -16,9 +16,10 @@ spring:
       static-locations:
         - classpath:/static/
         - file:./generated-plots/
-  app:
-    visualization:
-      output-dir: "../generated-plots/"
+
+app:
+  visualization:
+    output-dir: "generated-plots/"
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml

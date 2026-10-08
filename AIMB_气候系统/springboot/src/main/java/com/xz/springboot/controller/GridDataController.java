@@ -105,6 +105,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @RestController
@@ -118,7 +119,7 @@ public class GridDataController {
     private static final String UPLOAD_DIR = "temp-uploads/";
 
     // 存储临时文件映射 (临时文件ID -> 实际文件路径)
-    private final Map<String, String> tempFileMap = new HashMap<>();
+    private final Map<String, String> tempFileMap = new ConcurrentHashMap<>();
 
     /**
      * 1. 上传文件并获取变量列表
@@ -207,13 +208,18 @@ public class GridDataController {
             }
 
             // 调用可视化服务，传入时间片参数
-            String imageUrl = visualizationService.createPlotFromNetCDF(tempFile, variableName, timeIndex);
+            VisualizationService.PlotResult plot = visualizationService.createPlotWithStats(tempFile, variableName, timeIndex);
 
             // 返回图像URL
             Map<String, Object> response = new HashMap<>();
-            response.put("imageUrl", imageUrl);
+            response.put("imageUrl", plot.getImageUrl());
             response.put("message", "变量 '" + variableName + "' 时间片 " + timeIndex + " 可视化成功");
             response.put("timeIndex", timeIndex);
+            response.put("min", plot.getMin());
+            response.put("max", plot.getMax());
+            response.put("mean", plot.getMean());
+            response.put("validCount", plot.getValidCount());
+            response.put("dataRange", String.format(Locale.ROOT, "%.4f to %.4f", plot.getMin(), plot.getMax()));
 
             return ResponseEntity.ok(response);
 

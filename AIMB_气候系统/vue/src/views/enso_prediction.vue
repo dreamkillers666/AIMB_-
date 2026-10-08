@@ -16,10 +16,19 @@
       <!-- Section 1: Interactive Prediction Interface -->
       <section class="content-section">
         <h2 class="content-title">LSTA-Swin模型预测结果</h2>
+        <div class="prediction-settings">
+          <div class="settings-heading"><strong>预测设置</strong><span>LSTA-Swin</span></div>
+          <div class="settings-fields">
+            <label>起报月份</label>
+            <el-date-picker v-model="forecastStart" type="month" value-format="yyyy-MM" :clearable="false" @change="resetPrediction" />
+            <label>预测长度</label>
+            <el-select v-model="leadMonths" @change="resetPrediction"><el-option v-for="month in [10, 20]" :key="month" :label="month + ' 个月'" :value="month" /></el-select>
+          </div>
+        </div>
         <div class="prediction-interface">
           <!-- Input Panel -->
           <div class="interface-panel input-panel">
-            <h3 class="panel-title">Input [2022-06 : 2023-03]</h3>
+            <h3 class="panel-title">Input [模型内置输入场]</h3>
             <div class="image-display">
               <img :src="inputImage" alt="Input Data" />
             </div>
@@ -34,7 +43,7 @@
 
           <!-- Output Panel -->
           <div class="interface-panel output-panel">
-            <h3 class="panel-title">Output [2023-04 : 2024-11]</h3>
+            <h3 class="panel-title">Output [{{ forecastStart }} · {{ leadMonths }}个月设置]</h3>
             <div class="image-display">
               <img v-if="buttonState === 'success'" :src="predictionImageSrc" alt="Prediction Result" />
               <div v-else class="placeholder">
@@ -95,7 +104,11 @@ export default {
       ],
       inputImage: require("../assets/Model_pre/input_10_res.gif"),
       buttonState: 'start',
+      forecastStart: '2023-03',
+      leadMonths: 20,
       predictionImageSrc: '',
+      predictionTimer: null,
+      charts: [],
     }
   },
   methods: {
@@ -119,12 +132,16 @@ export default {
     },
     startPrediction() {
       this.buttonState = 'loading';
-      setTimeout(() => {
+      this.predictionTimer = setTimeout(() => {
         this.buttonState = 'success';
-        this.predictionImageSrc = require('@/assets/Model_pre/input_20_res.gif');
+        this.predictionImageSrc = this.leadMonths === 10
+          ? require('@/assets/Model_pre/input_10_res.gif')
+          : require('@/assets/Model_pre/input_20_res.gif');
       }, 5000);
     },
     resetPrediction() {
+      clearTimeout(this.predictionTimer);
+      this.predictionTimer = null;
       this.buttonState = 'start';
       this.predictionImageSrc = '';
     },
@@ -132,6 +149,7 @@ export default {
       // --- ECharts for 'pre' ---
       let preChartDom = document.getElementById('pre');
       let preChart = this.$echarts.init(preChartDom, 'dark'); // Using 'dark' theme
+      this.charts.push(preChart);
       let preOption = {
         // ... (Your ECharts option for 'pre')
         title: { left: 'center' },
@@ -170,6 +188,7 @@ export default {
       // --- ECharts for 'fur' ---
       let furChartDom = document.getElementById('fur');
       let furChart = this.$echarts.init(furChartDom, 'dark'); // Using 'dark' theme
+      this.charts.push(furChart);
       let furOption = {
         // ... (Your ECharts option for 'fur')
         tooltip: { trigger: 'axis' },
@@ -188,6 +207,11 @@ export default {
   },
   mounted() {
     this.initCharts();
+  },
+  beforeDestroy() {
+    clearTimeout(this.predictionTimer);
+    this.charts.forEach(chart => chart.dispose());
+    this.charts = [];
   }
 }
 </script>
@@ -217,6 +241,36 @@ export default {
 /* 3. 内容区域和章节 */
 .content-wrapper {
   line-height: 1.7;
+}
+.prediction-settings {
+  margin: 0 auto 24px;
+  padding: 16px 18px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.settings-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 13px;
+  color: #e0e7ff;
+}
+.settings-heading span {
+  color: #67e8f9;
+  font-size: 12px;
+}
+.settings-fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #94a3b8;
+  font-size: 12px;
+}
+.settings-fields .el-date-editor,
+.settings-fields .el-select {
+  width: 170px;
 }
 .content-section {
   margin-top: 40px;

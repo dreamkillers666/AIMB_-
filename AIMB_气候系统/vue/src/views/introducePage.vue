@@ -241,6 +241,7 @@
 <script>
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import presetSst from '../data/presetSst.json';
 // leaflet-velocity 依赖全局 L，先挂到 window 再加载
 if (!window.L) window.L = L;
 require('leaflet-velocity');
@@ -729,9 +730,11 @@ export default {
       return Math.max(0, this.carouselSlides.length - this.slidesPerView);
     },
     windBadgeText() {
-      if (this.windStatus.source !== "real") return "风场";
       const labels = { wind: "GFS 风场", sst: "GFS 海温", both: "GFS 风场+海温" };
       const label = labels[this.currentLayer] || "GFS 风场";
+      if (this.windStatus.source !== "real") {
+        return { wind: "风场", sst: "海温", both: "风场+海温" }[this.currentLayer] || "风场";
+      }
       return label + " · 起报时间 " + (this.windStatus.refTime || "--");
     },
   },
@@ -1245,15 +1248,15 @@ export default {
       }
     },
 
-    // 回退到程序化模拟风场（nino34 一并清空，状态文字回退概率主导）
+    // 固定风场案例配套本地海温场，确保图层不依赖实时接口。
     applyMockWindData() {
       if (this.destroyed) return;
       this.windData = this.generateWindData();
-      this.sstData = null;
-      this.hasSst = false;
+      this.sstData = this.adaptSstData({ sst: presetSst });
+      this.hasSst = !!this.sstData;
       this.nino34 = null;
       if (this.velocityLayer) this.velocityLayer.setData(this.windData);
-      if (this.sstLayer) this.sstLayer.setData(null);
+      if (this.sstLayer) this.sstLayer.setData(this.sstData);
       this.windStatus = { source: "mock", refTime: null };
       if (this.currentLayer !== "wind" && !this.hasSst) {
         this.currentLayer = "wind";
