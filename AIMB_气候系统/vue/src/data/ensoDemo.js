@@ -32,18 +32,15 @@ const replayOptions = Array.from({ length: 24 }, (_, index) => {
 // CPC ONI seasonal values are keyed by their center month (DJF -> January).
 // The published ERSSTv6 table currently ends at JAS 2026, centered on August.
 const observedOni = {
+  '2024-01': 1.8, '2024-02': 1.5, '2024-03': 1.2, '2024-04': 0.8,
+  '2024-05': 0.4, '2024-06': 0.2, '2024-07': 0.1, '2024-08': 0.0,
+  '2024-09': -0.1, '2024-10': -0.2, '2024-11': -0.3, '2024-12': -0.4,
   '2025-01': -0.5, '2025-02': -0.2, '2025-03': -0.1, '2025-04': 0.0,
   '2025-05': 0.0, '2025-06': 0.0, '2025-07': -0.1, '2025-08': -0.3,
   '2025-09': -0.4, '2025-10': -0.6, '2025-11': -0.6, '2025-12': -0.6,
   '2026-01': -0.4, '2026-02': -0.2, '2026-03': 0.1, '2026-04': 0.5,
   '2026-05': 0.9, '2026-06': 1.4, '2026-07': 1.8, '2026-08': 2.2
 }
-
-const extendedOni = [
-  2.16, 2.27, 2.22, 2.03, 1.72, 1.36, 1.03, 0.67, 0.28, -0.02, -0.28, -0.46,
-  -0.57, -0.54, -0.39, -0.19, 0.02, 0.17, 0.19, 0.08, -0.08, -0.20, -0.18, -0.03,
-  0.13, 0.22, 0.16, 0.00, -0.16, -0.22, -0.12, 0.06, 0.20, 0.25, 0.16, 0.02
-]
 
 const toMonthDate = (value) => {
   const [year, month] = value.split('-').map(Number)
@@ -64,39 +61,63 @@ const monthDistance = (from, to) => {
   return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth()
 }
 
-const hashStart = (value) => value.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
-
-const referenceOni = (value) => {
-  if (Object.prototype.hasOwnProperty.call(observedOni, value)) return observedOni[value]
-  const offset = monthDistance('2026-08', value)
-  if (offset >= 0 && offset < extendedOni.length) return extendedOni[offset]
-  return Number((0.18 * Math.sin((offset + 4) / 2.8) * Math.exp(-Math.max(offset, 0) / 30)).toFixed(2))
-}
-
+const referenceOni = (value) => Object.prototype.hasOwnProperty.call(observedOni, value) ? observedOni[value] : null
 const isObservedMonth = (value) => Object.prototype.hasOwnProperty.call(observedOni, value)
 
+const latestObservationAtOrBefore = (value) => Object.keys(observedOni)
+  .filter(month => month <= value)
+  .sort()
+  .slice(-1)
+  .map(month => ({ month, value: observedOni[month] }))[0] || null
+
+const estimateTendency = (throughMonth) => {
+  const history = Object.keys(observedOni)
+    .filter(month => month <= throughMonth)
+    .sort()
+    .slice(-4)
+    .map(month => ({ month, value: observedOni[month] }))
+  if (history.length < 2) return 0
+
+  const xMean = (history.length - 1) / 2
+  const yMean = history.reduce((sum, point) => sum + point.value, 0) / history.length
+  const covariance = history.reduce((sum, point, index) => sum + (index - xMean) * (point.value - yMean), 0)
+  const variance = history.reduce((sum, point, index) => sum + Math.pow(index - xMean, 2), 0)
+  return Math.max(-0.3, Math.min(0.3, covariance / variance))
+}
+
+const hindcastValue = (start, targetMonth) => {
+  // ONI is centered on a three-month season, so use observations published by the issue month.
+  const latest = latestObservationAtOrBefore(addMonths(start, -2)) || latestObservationAtOrBefore('2026-08')
+  if (!latest) return null
+
+  let value = latest.value
+  let tendency = estimateTendency(latest.month)
+  const steps = Math.max(0, monthDistance(latest.month, targetMonth))
+  for (let step = 0; step < steps; step += 1) {
+    value = (value + tendency) * 0.95
+    tendency *= 0.65
+  }
+  return Number(value.toFixed(2))
+}
+
 const makeReplaySeries = (start) => {
-  const seed = hashStart(start)
   return leadMonths.map((leadMonth) => {
     const targetMonth = addMonths(start, leadMonth)
-    const reference = referenceOni(targetMonth)
+    const value = hindcastValue(start, targetMonth)
     const spread = 0.28 + leadMonth * 0.055
-    const phase = Math.sin((seed * 127.1 + leadMonth * 311.7) * Math.PI / 180) * (0.10 + leadMonth * 0.04)
-    const drift = ((seed % 7) - 3) * 0.02 * Math.min(leadMonth / 8, 1)
-    const value = reference + (phase + drift) * 2.5
     return {
       leadMonth,
       month: targetMonth,
-      value: Number(value.toFixed(2)),
-      observed: isObservedMonth(targetMonth) ? Number(reference.toFixed(2)) : null,
-      lower: Number((value - spread).toFixed(2)),
-      upper: Number((value + spread).toFixed(2))
+      value,
+      observed: isObservedMonth(targetMonth) ? referenceOni(targetMonth) : null,
+      lower: value == null ? null : Number((value - spread).toFixed(2)),
+      upper: value == null ? null : Number((value + spread).toFixed(2))
     }
   })
 }
 
 const calculateMetrics = (points, lead) => {
-  const evaluated = points.filter(point => Number.isFinite(point.observed))
+  const evaluated = points.filter(point => Number.isFinite(point.value) && Number.isFinite(point.observed))
   const predicted = evaluated.map(point => point.value)
   const reference = evaluated.map(point => point.observed)
   if (!evaluated.length) return { lead, pcc: null, mae: null, rmse: null, sampleCount: 0 }

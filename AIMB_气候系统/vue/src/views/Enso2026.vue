@@ -9,7 +9,7 @@
     </header>
 
     <section class="page-heading">
-      <div><p class="eyebrow">2026 AIMB · ENSO</p><h1>{{ currentPage.label }}</h1><p class="subtitle">聚焦 Niño3.4 / ONI 的长提前期预测、滚动回放与可复现验证</p></div>
+      <div><p class="eyebrow">2026 AIMB · ENSO</p><h1>{{ currentPage.label }}</h1><p v-if="pageKey === 'overview'" class="subtitle">聚焦 Niño3.4 / ONI 的长提前期预测、滚动回放与可复现验证</p></div>
     </section>
 
     <section v-if="pageKey === 'overview'" class="overview-view">

@@ -12,7 +12,7 @@
     </div>
 
     <el-menu-item index="/enso/overview"><i class="el-icon-house"></i><span slot="title">ENSO 总览</span></el-menu-item>
-    <el-menu-item index="/enso/forecast"><i class="el-icon-data-line"></i><span slot="title">预测产品</span></el-menu-item>
+    <el-menu-item index="/enso/models"><i class="el-icon-data-line"></i><span slot="title">预测模型</span></el-menu-item>
     <el-menu-item index="/enso/replay"><i class="el-icon-time"></i><span slot="title">历史回放</span></el-menu-item>
     <el-menu-item index="/enso/validation"><i class="el-icon-s-check"></i><span slot="title">提前期验证</span></el-menu-item>
     <el-menu-item index="/enso/explainability"><i class="el-icon-view"></i><span slot="title">物理解释</span></el-menu-item>
