@@ -5,7 +5,7 @@ import store from "@/store";
 Vue.use(VueRouter)
 
 const routes = [
-  { path: '/enso/overview', name: 'ENSO总览', component: () => import('../views/Enso2026.vue') },
+  { path: '/enso/overview', name: 'ENSO系统介绍', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/showcase', name: '动态大屏', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/monitor', name: 'ENSO监测', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/introduction', name: 'ENSO介绍', component: () => import('../views/Enso2026.vue') },

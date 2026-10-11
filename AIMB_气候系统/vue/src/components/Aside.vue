@@ -11,7 +11,7 @@
       <div class="logo-text" v-show="logoTextShow">人工智能气候预测系统</div>
     </div>
 
-    <el-menu-item index="/enso/overview"><i class="el-icon-house"></i><span slot="title">ENSO 总览</span></el-menu-item>
+    <el-menu-item index="/enso/overview"><i class="el-icon-info"></i><span slot="title">系统介绍</span></el-menu-item>
     <el-menu-item index="/enso/models"><i class="el-icon-data-line"></i><span slot="title">预测模型</span></el-menu-item>
     <el-menu-item index="/enso/replay"><i class="el-icon-time"></i><span slot="title">历史回放</span></el-menu-item>
     <el-menu-item index="/enso/validation"><i class="el-icon-s-check"></i><span slot="title">提前期验证</span></el-menu-item>

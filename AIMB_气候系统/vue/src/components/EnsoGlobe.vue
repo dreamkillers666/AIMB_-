@@ -48,9 +48,9 @@ import * as THREE from 'three';
 import earthMapUrl from '../assets/earth.jpg';
 
 const RADIUS = 2;
-const PARTICLE_COUNT = 5200;
-const MOBILE_PARTICLE_COUNT = 2800;
-const TRAIL_LENGTH = 18;
+const PARTICLE_COUNT = 3600;
+const MOBILE_PARTICLE_COUNT = 1900;
+const TRAIL_LENGTH = 15;
 const TRAIL_INTERVAL = 0.08;
 
 const toSpherePoint = (longitude, latitude, radius) => {
@@ -78,7 +78,8 @@ export default {
   props: {
     windData: { type: Array, default: () => [] },
     sstData: { type: Object, default: null },
-    layer: { type: String, default: 'wind' }
+    layer: { type: String, default: 'wind' },
+    layout: { type: String, default: 'showcase' }
   },
   data() {
     return { rendererError: '', regionVisible: true };
@@ -92,6 +93,9 @@ export default {
     },
     layer() {
       this.applyLayer();
+    },
+    layout() {
+      this.resizeScene();
     }
   },
   mounted() {
@@ -110,7 +114,7 @@ export default {
         const width = Math.max(1, rect.width);
         const height = Math.max(1, rect.height);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
         renderer.setSize(width, height, false);
         renderer.setClearColor(0x071923, 1);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -127,6 +131,8 @@ export default {
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x071923);
+        const starfield = this.createStarfield();
+        scene.add(starfield);
         const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 80);
         camera.position.set(0, 0, 6.1);
 
@@ -140,6 +146,11 @@ export default {
         const fillLight = new THREE.DirectionalLight(0x3b91a2, 0.75);
         fillLight.position.set(3, -1, -3);
         scene.add(fillLight);
+
+        const orbit = this.createOrbitRing(0x47e1e1, 0.13, 0.36, 1.15);
+        const orbitAccent = this.createOrbitRing(0xffc56a, 0.34, 0.23, 0.42);
+        group.add(orbit);
+        group.add(orbitAccent);
 
         const earthGeometry = new THREE.SphereGeometry(RADIUS, 256, 192);
         const earthMaterial = new THREE.MeshStandardMaterial({
@@ -174,6 +185,19 @@ export default {
         );
         ninoMarker.position.copy(ninoCenter);
         group.add(ninoMarker);
+        const ninoGlow = new THREE.Mesh(
+          new THREE.SphereGeometry(0.105, 18, 12),
+          new THREE.MeshBasicMaterial({ color: 0xffae50, transparent: true, opacity: 0.23, depthWrite: false })
+        );
+        ninoGlow.position.copy(toSpherePoint(215, 0, RADIUS + 0.052));
+        group.add(ninoGlow);
+        const ninoHalo = new THREE.Mesh(
+          new THREE.TorusGeometry(0.082, 0.006, 5, 42),
+          new THREE.MeshBasicMaterial({ color: 0xffe29a, transparent: true, opacity: 0.9, depthWrite: false })
+        );
+        ninoHalo.position.copy(toSpherePoint(215, 0, RADIUS + 0.063));
+        ninoHalo.lookAt(ninoHalo.position.clone().multiplyScalar(2));
+        group.add(ninoHalo);
         const ninoLabelAnchor = toSpherePoint(242, 0, RADIUS + 0.035);
 
         const atmosphere = new THREE.Mesh(
@@ -219,6 +243,8 @@ export default {
           ninoBox,
           ninoCenter,
           ninoMarker,
+          ninoGlow,
+          ninoHalo,
           ninoLabelAnchor,
           labelWorldPosition: new THREE.Vector3(),
           globeWorldPosition: new THREE.Vector3(),
@@ -226,6 +252,11 @@ export default {
           cameraDirection: new THREE.Vector3(),
           labelScreenPosition: new THREE.Vector3(),
           atmosphere,
+          starfield,
+          orbit,
+          orbitAccent,
+          reducedMotion: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
+          firstWindFrame: true,
           frame: 0,
           lastFrame: 0,
           resizeObserver: null,
@@ -281,6 +312,46 @@ export default {
         depthWrite: false
       });
       return new THREE.LineSegments(geometry, material);
+    },
+
+    createStarfield() {
+      const count = 440;
+      const positions = new Float32Array(count * 3);
+      for (let index = 0; index < count; index += 1) {
+        const direction = new THREE.Vector3(
+          Math.random() * 2 - 1,
+          Math.random() * 2 - 1,
+          Math.random() * 2 - 1
+        ).normalize();
+        const radius = 23 + Math.random() * 27;
+        positions[index * 3] = direction.x * radius;
+        positions[index * 3 + 1] = direction.y * radius;
+        positions[index * 3 + 2] = direction.z * radius;
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      return new THREE.Points(geometry, new THREE.PointsMaterial({
+        color: 0x8dd9ec,
+        size: 1.15,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0.42,
+        depthWrite: false
+      }));
+    },
+
+    createOrbitRing(color, rotationX, rotationY, opacity, arc) {
+      const geometry = new THREE.TorusGeometry(2.19, 0.006, 4, 180, arc || Math.PI * 2);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const ring = new THREE.Mesh(geometry, material);
+      ring.rotation.set(rotationX, rotationY, 0.16);
+      return ring;
     },
 
     createNino34Outline() {
@@ -505,7 +576,9 @@ export default {
       state.particleState = [];
       if (!state.windField) return;
 
-      const particleCount = window.innerWidth < 768 ? MOBILE_PARTICLE_COUNT : PARTICLE_COUNT;
+      const particleCount = state.reducedMotion
+        ? 1
+        : (window.innerWidth < 768 ? MOBILE_PARTICLE_COUNT : PARTICLE_COUNT);
       const pointPositions = new Float32Array(particleCount * 3);
       const pointColors = new Float32Array(particleCount * 3);
       const streakPositions = new Float32Array(particleCount * (TRAIL_LENGTH - 1) * 2 * 3);
@@ -680,7 +753,7 @@ export default {
       state.camera.position.y = 0;
       state.camera.position.z = state.zoom * state.mobileZoom;
       state.camera.updateProjectionMatrix();
-      state.group.position.x = width > 900 ? 0.78 : 0;
+      state.group.position.x = this.layout === 'center' ? 0 : (width > 900 ? 0.78 : 0);
     },
 
     renderFrame(time) {
@@ -689,8 +762,19 @@ export default {
       state.frame = requestAnimationFrame((nextTime) => this.renderFrame(nextTime));
       const delta = state.lastFrame ? Math.min((time - state.lastFrame) / 1000, 0.04) : 0;
       state.lastFrame = time;
-      if (!state.drag) state.group.rotation.y += delta * 0.035;
-      this.updateParticles(delta);
+      const motionEnabled = !state.reducedMotion;
+      if (motionEnabled && !state.drag) state.group.rotation.y += delta * 0.022;
+      if (motionEnabled || state.firstWindFrame) this.updateParticles(state.firstWindFrame ? Math.max(delta, 0.016) : delta);
+      state.firstWindFrame = false;
+      if (motionEnabled) {
+        const pulse = (Math.sin(time * 0.0018) + 1) * 0.5;
+        state.ninoGlow.material.opacity = 0.14 + pulse * 0.15;
+        state.ninoGlow.scale.setScalar(0.92 + pulse * 0.17);
+        state.ninoHalo.material.opacity = 0.54 + pulse * 0.4;
+        state.ninoHalo.scale.setScalar(0.92 + pulse * 0.12);
+        state.orbit.rotation.y += delta * 0.018;
+        state.orbitAccent.rotation.y -= delta * 0.012;
+      }
       this.updateRegionLabel();
       state.renderer.render(state.scene, state.camera);
     },
