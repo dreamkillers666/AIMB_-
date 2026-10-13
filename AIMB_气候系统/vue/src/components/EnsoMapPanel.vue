@@ -4,6 +4,7 @@
       v-if="displayMode === '3d'"
       :wind-data="windData"
       :sst-data="sstData"
+      :sst-mode="sstMode"
       :layer="currentLayer"
       layout="center"
       @unavailable="handleGlobeUnavailable"
@@ -23,8 +24,8 @@
       <button type="button" class="maximize-button" :aria-label="maximized ? '还原地图大小' : '放大地图'" :title="maximized ? '还原地图大小' : '放大地图'" @click="$emit('toggle-maximize')"><i :class="maximized ? 'el-icon-close' : 'el-icon-full-screen'"></i><span>{{ maximized ? '还原' : '放大' }}</span></button>
     </div>
 
-    <div v-if="(currentLayer === 'sst' || currentLayer === 'both') && hasSst" class="sst-legend" aria-label="海表温度图例">
-      <div class="sst-legend-bar"></div><div class="sst-legend-labels"><span>−2</span><span>8</span><span>16</span><span>24</span><span>32°C</span></div>
+    <div v-if="(currentLayer === 'sst' || currentLayer === 'both') && hasSst" class="sst-legend" :aria-label="sstMode === 'anomaly' ? '海温距平图例' : '海表温度图例'">
+      <div class="sst-legend-bar" :style="{ background: colorGradient }"></div><div class="sst-legend-labels"><span>{{ sstMode === 'anomaly' ? '−3' : '−2' }}</span><span>{{ sstMode === 'anomaly' ? '−1.5' : '8' }}</span><span>0</span><span>{{ sstMode === 'anomaly' ? '+1.5' : '24' }}</span><span>{{ sstMode === 'anomaly' ? '+3 ℃' : '32°C' }}</span></div>
     </div>
     <div class="data-badge" :class="{ 'is-live': windStatus.source === 'real' }"><i></i>{{ windBadgeText }}</div>
   </section>
@@ -35,6 +36,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import EnsoGlobe from './EnsoGlobe.vue'
 import presetSst from '../data/presetSst.json'
+import { ensoFieldColor, SST_COLOR_GRADIENT } from '../data/ensoColorScale'
 
 if (!window.L) window.L = L
 require('leaflet-velocity')
@@ -55,6 +57,7 @@ const SstOverlayLayer = L.Layer.extend({
     this._imgData = null;
     // 海温色块透明度：海温模式 0.65；叠加模式降为 0.42 作"海洋底色"
     this._opacity = 0.65;
+    this._anomaly = false;
   },
 
   onAdd(map) {
@@ -103,6 +106,12 @@ const SstOverlayLayer = L.Layer.extend({
 
   setData(data) {
     this._data = data || null;
+    this._lut = null;
+    if (this._map) this._reset();
+  },
+
+  setAnomalyMode(value) {
+    this._anomaly = !!value;
     this._lut = null;
     if (this._map) this._reset();
   },
@@ -318,6 +327,9 @@ const SstOverlayLayer = L.Layer.extend({
     }
     const img = this._imgData;
     const px = img.data;
+    // ImageData is reused between frames; clear transparent cells before sampling
+    // so land and missing values cannot retain colors from the previous field.
+    px.fill(0);
     for (let y = 0; y < oh; y += step) {
       const j0 = (la1 - rowLats[y]) / dy;
       const yEnd = Math.min(y + step, oh);
@@ -325,8 +337,8 @@ const SstOverlayLayer = L.Layer.extend({
         const i0 = (colLons[x] - lo1) / dx;
         const val = this._bilinear(data, nx, ny, i0, j0);
         if (val === null) continue; // 陆地/缺测 → 透明
-        const t = Math.max(-2, Math.min(32, val));
-        const ci = Math.round(((t + 2) / 34) * 255);
+        const t = this._anomaly ? Math.max(-3, Math.min(3, val)) : Math.max(-2, Math.min(32, val));
+        const ci = this._anomaly ? Math.round(((t + 3) / 6) * 255) : Math.round(((t + 2) / 34) * 255);
         const c = this._lut[ci];
         const xEnd = Math.min(x + step, ow);
         for (let yy = y; yy < yEnd; yy++) {
@@ -373,40 +385,11 @@ const SstOverlayLayer = L.Layer.extend({
     return typeof v === 'number' && !isNaN(v) && Math.abs(v) < 100;
   },
 
-  // 海温 -2~32°C 海洋风色带：蓝（冷）→ 青 → 绿 → 黄 → 红（暖），256 级查色表
   _buildLut() {
-    const stops = [
-      { t: -2, c: [15, 45, 120] },
-      { t: 4, c: [30, 90, 170] },
-      { t: 10, c: [40, 140, 190] },
-      { t: 16, c: [45, 180, 170] },
-      { t: 20, c: [110, 200, 120] },
-      { t: 24, c: [220, 210, 90] },
-      { t: 28, c: [235, 150, 60] },
-      { t: 32, c: [210, 60, 40] },
-    ];
     const lut = [];
     for (let k = 0; k < 256; k++) {
-      const t = -2 + (34 * k) / 255;
-      let c = stops[stops.length - 1].c;
-      if (t <= stops[0].t) {
-        c = stops[0].c;
-      } else {
-        for (let s = 1; s < stops.length; s++) {
-          if (t <= stops[s].t) {
-            const a = stops[s - 1];
-            const b = stops[s];
-            const f = (t - a.t) / (b.t - a.t);
-            c = [
-              Math.round(a.c[0] + (b.c[0] - a.c[0]) * f),
-              Math.round(a.c[1] + (b.c[1] - a.c[1]) * f),
-              Math.round(a.c[2] + (b.c[2] - a.c[2]) * f),
-            ];
-            break;
-          }
-        }
-      }
-      lut.push(c);
+      const value = this._anomaly ? -3 + (6 * k) / 255 : -2 + (34 * k) / 255;
+      lut.push(ensoFieldColor(value, this._anomaly));
     }
     this._lut = lut;
   },
@@ -417,12 +400,15 @@ export default {
   components: { EnsoGlobe },
   props: {
     compact: { type: Boolean, default: false },
-    maximized: { type: Boolean, default: false }
+    maximized: { type: Boolean, default: false },
+    sstField: { type: Object, default: null },
+    sstMode: { type: String, default: 'absolute' },
+    initialLayer: { type: String, default: 'both' }
   },
   data() {
     return {
       displayMode: '3d',
-      currentLayer: 'both',
+      currentLayer: this.initialLayer,
       windData: [],
       sstData: null,
       hasSst: false,
@@ -432,22 +418,40 @@ export default {
       sstLayer: null,
       pollTimer: null,
       destroyed: false,
-      fetchController: null
+      fetchController: null,
+      externalSstActive: false
     }
   },
   computed: {
+    colorGradient() {
+      return SST_COLOR_GRADIENT
+    },
     windBadgeText() {
+      if (this.windStatus.source === 'replay') return '历史风场 · 随月份变化'
       if (this.windStatus.source !== 'real') return '全球风场 · 海温监测'
       return 'GFS 分析场 · ' + (this.windStatus.refTime || '最新时次')
     }
   },
   watch: {
+    sstField: {
+      immediate: true,
+      handler() {
+        if (this.sstField) this.applyExternalSst()
+        else this.clearExternalSst()
+      }
+    },
+    sstMode() {
+      if (this.sstLayer) this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
+      if (this.sstField && this.sstMode === 'anomaly') this.applyReplayWind()
+      if (!this.sstField) this.clearExternalSst()
+    },
     maximized() {
       this.$nextTick(() => this.resizeMap())
     }
   },
   mounted() {
     this.applyLocalData()
+    this.applyExternalSst()
     this.loadRealWind()
     this.pollTimer = window.setInterval(this.refreshRealWind, 30 * 60 * 1000)
   },
@@ -468,6 +472,40 @@ export default {
       this.windData = this.generateWindData()
       this.sstData = this.normalizeGridField(presetSst)
       this.hasSst = !!this.sstData
+    },
+    applyExternalSst() {
+      if (!this.sstField) return
+      const normalized = this.normalizeGridField(this.sstField)
+      if (!normalized) return
+      this.sstData = normalized
+      this.hasSst = true
+      this.externalSstActive = true
+      this.applyReplayWind()
+      if (this.sstLayer) {
+        this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
+        this.sstLayer.setData(this.sstData)
+      }
+    },
+    clearExternalSst() {
+      // Leaving history mode must remove the last replay frame from both renderers.
+      if (this.destroyed || this.sstField || !this.externalSstActive) return
+      this.externalSstActive = false
+      this.applyLocalData()
+      this.windStatus = { source: 'local', refTime: null }
+      if (this.velocityLayer && this.velocityLayer.setData) this.velocityLayer.setData(this.windData)
+      if (this.sstLayer) {
+        this.sstLayer.setAnomalyMode(false)
+        this.sstLayer.setData(this.sstData)
+      }
+      this.loadRealWind()
+    },
+    applyReplayWind() {
+      if (!this.sstField || this.sstMode !== 'anomaly') return
+      const wind = this.generateReplayWind(this.sstField)
+      if (!wind) return
+      this.windData = wind
+      this.windStatus = { source: 'replay', refTime: this.sstField.header && this.sstField.header.forecastTime != null ? `第 ${Number(this.sstField.header.forecastTime) + 1} 帧` : '当前月份' }
+      if (this.velocityLayer && this.velocityLayer.setData) this.velocityLayer.setData(wind)
     },
     generateWindData() {
       const nx = 180, ny = 90, lo1 = 0, la1 = 90, dx = 2, dy = 2
@@ -507,6 +545,71 @@ export default {
         { header: { ...header, parameterCategory: 2, parameterNumber: 2 }, data: u },
         { header: { ...header, parameterCategory: 2, parameterNumber: 3 }, data: v }
       ]
+    },
+    generateReplayWind(field) {
+      if (!field || !field.header || !Array.isArray(field.data)) return null
+      const base = this.generateWindData()
+      const source = field.header
+      const sourceWidth = Number(source.nx)
+      const sourceHeight = Number(source.ny)
+      const dx = Number(source.dx)
+      const dy = Number(source.dy)
+      const lo1 = Number(source.lo1)
+      const la1 = Number(source.la1)
+      if (![sourceWidth, sourceHeight, dx, dy, lo1, la1].every(Number.isFinite)) return base
+      const values = field.data
+      const frame = Number(source.forecastTime) || 0
+      const sample = (longitude, latitude) => {
+        const x = ((longitude - lo1) / dx % sourceWidth + sourceWidth) % sourceWidth
+        const y = Math.max(0, Math.min(sourceHeight - 1, (la1 - latitude) / Math.abs(dy)))
+        const x0 = Math.floor(x)
+        const x1 = (x0 + 1) % sourceWidth
+        const y0 = Math.floor(y)
+        const y1 = Math.min(sourceHeight - 1, y0 + 1)
+        const fx = x - x0
+        const fy = y - y0
+        const corners = [
+          [values[y0 * sourceWidth + x0], (1 - fx) * (1 - fy)],
+          [values[y0 * sourceWidth + x1], fx * (1 - fy)],
+          [values[y1 * sourceWidth + x0], (1 - fx) * fy],
+          [values[y1 * sourceWidth + x1], fx * fy]
+        ]
+        let weighted = 0
+        let weight = 0
+        corners.forEach(([value, factor]) => {
+          if (Number.isFinite(value)) {
+            weighted += value * factor
+            weight += factor
+          }
+        })
+        return weight > 0 ? weighted / weight : 0
+      }
+      const distance = (longitude, center) => {
+        const delta = Math.abs(((longitude - center + 540) % 360) - 180)
+        return delta
+      }
+      const waveCenter = 158 + ((frame * 13) % 88)
+      for (let j = 0; j < 90; j += 1) {
+        const latitude = 90 - j * 2
+        const latEnvelope = Math.exp(-Math.pow(latitude / 13, 2))
+        const tradeEnvelope = Math.exp(-Math.pow(latitude / 20, 2))
+        for (let i = 0; i < 180; i += 1) {
+          const longitude = i * 2
+          const anomaly = Math.max(-3, Math.min(3, sample(longitude, latitude)))
+          const core = latEnvelope * Math.exp(-Math.pow(distance(longitude, 215) / 62, 2))
+          const movingWave = latEnvelope * Math.exp(-Math.pow(distance(longitude, waveCenter) / 38, 2))
+          const basinPulse = tradeEnvelope * Math.sin(frame * 0.72 + longitude * Math.PI / 31)
+          const offset = j * 180 + i
+          // Warm anomalies weaken the equatorial trades and add westerly flow;
+          // cold anomalies strengthen easterlies. The moving wave keeps changes
+          // visible even when the index remains near a local plateau.
+          base[0].data[offset] += anomaly * core * 6.8 + Math.sin(frame * 0.8) * movingWave * 4.5 + basinPulse * 2.8
+          base[1].data[offset] += anomaly * core * Math.sin((longitude - 215) * Math.PI / 42) * 4.8 + Math.cos(frame * 0.65) * movingWave * 3.6 + Math.cos(frame * 0.54 + longitude * Math.PI / 27) * tradeEnvelope * 1.8
+        }
+      }
+      const replayHeader = { refTime: source.refTime || 'historical-demo', forecastTime: frame }
+      base.forEach(fieldItem => { fieldItem.header = { ...fieldItem.header, ...replayHeader } })
+      return base
     },
     normalizeGridField(comp, parameterCategory, parameterNumber) {
       if (!comp || !comp.header || !Array.isArray(comp.data)) return null
@@ -562,12 +665,16 @@ export default {
     },
     applyWindData(wind, sst) {
       if (this.destroyed) return
-      this.windData = wind
-      if (sst) this.sstData = sst
+      const replayWind = this.sstField && this.sstMode === 'anomaly' ? this.generateReplayWind(this.sstField) : null
+      this.windData = replayWind || wind
+      if (sst && !this.sstField) this.sstData = sst
       this.hasSst = !!this.sstData
-      this.windStatus = { source: 'real', refTime: this.formatTime(wind[0].header.refTime) }
-      if (this.velocityLayer) this.velocityLayer.setData(wind)
+      this.windStatus = replayWind
+        ? { source: 'replay', refTime: this.sstField.header && this.sstField.header.forecastTime != null ? `第 ${Number(this.sstField.header.forecastTime) + 1} 帧` : '当前月份' }
+        : { source: 'real', refTime: this.formatTime(wind[0].header.refTime) }
+      if (this.velocityLayer) this.velocityLayer.setData(this.windData)
       if (this.sstLayer) this.sstLayer.setData(this.sstData)
+      if (this.sstLayer) this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
       if (this.displayMode === '3d' && this.velocityLayer && this.velocityLayer.pause) this.velocityLayer.pause()
       if (!this.hasSst && this.currentLayer !== 'wind') this.switchLayer('wind')
     },
@@ -605,8 +712,8 @@ export default {
       }).addTo(this.map)
       this.velocityLayer = L.velocityLayer({
         displayValues: false, displayOptions: { velocityType: '', emptyString: '' },
-        maxVelocity: 22, minVelocity: 0, velocityScale: 0.02, particleAge: 70,
-        lineWidth: 1.2, particleMultiplier: 1 / 1800, frameRate: 20,
+        maxVelocity: 26, minVelocity: 0, velocityScale: 0.03, particleAge: 90,
+        lineWidth: 1.45, particleMultiplier: 1 / 1250, frameRate: 20,
         colorScale: ['rgb(8, 34, 80)', 'rgb(12, 58, 122)', 'rgb(18, 88, 168)', 'rgb(26, 122, 200)', 'rgb(40, 156, 214)', 'rgb(66, 188, 224)', 'rgb(110, 214, 232)', 'rgb(150, 232, 238)'],
         data: this.windData
       }).addTo(this.map)
@@ -614,6 +721,7 @@ export default {
       this.velocityLayer.resume = () => { if (this.velocityLayer) this.velocityLayer._clearAndRestart() }
       this.sstLayer = new SstOverlayLayer().addTo(this.map)
       this.sstLayer.setData(this.sstData)
+      this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
       if (this.velocityLayer._canvasLayer && this.velocityLayer._canvasLayer._canvas) this.velocityLayer._canvasLayer._canvas.style.zIndex = '2'
       this.map.on('dragstart', () => this.velocityLayer && this.velocityLayer.pause())
       this.map.on('dragend', () => this.velocityLayer && this.velocityLayer.resume())
@@ -646,10 +754,10 @@ export default {
       } else if (this.currentLayer === 'both') {
         this.sstLayer.setOpacity(0.42)
         this.sstLayer.show()
-        if (this.velocityLayer.setOptions) this.velocityLayer.setOptions({ particleMultiplier: 1 / 2100 })
+        if (this.velocityLayer.setOptions) this.velocityLayer.setOptions({ particleMultiplier: 1 / 1450 })
         this._showVelocityLayer()
       } else {
-        if (this.velocityLayer.setOptions) this.velocityLayer.setOptions({ particleMultiplier: 1 / 1800 })
+        if (this.velocityLayer.setOptions) this.velocityLayer.setOptions({ particleMultiplier: 1 / 1250 })
         this._showVelocityLayer()
         this.sstLayer.hide()
       }
@@ -672,7 +780,7 @@ export default {
 .enso-map-panel{position:relative;isolation:isolate;display:block;width:100%;height:100%;min-height:320px;overflow:hidden;border:1px solid rgba(55,143,171,.34);border-radius:7px;background:radial-gradient(ellipse at 50% 48%,rgba(16,91,117,.44),transparent 62%),#061a2a;color:#dff8ff}
 .map-2d,.map-vignette{position:absolute;inset:0}.map-2d{z-index:0;background:#061a2a}.map-vignette{z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 48%,rgba(2,12,24,.46) 100%),linear-gradient(180deg,rgba(3,16,28,.14),transparent 24%,transparent 77%,rgba(3,16,28,.35))}
 .map-toolbar{position:absolute;z-index:5;top:12px;display:flex;gap:4px;padding:4px;border:1px solid rgba(64,164,192,.3);border-radius:7px;background:rgba(3,20,34,.76);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(9px)}.map-toolbar-left{left:12px}.map-toolbar-right{right:12px}.map-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:0 9px;border:1px solid transparent;border-radius:4px;color:#96b6c4;background:transparent;font:600 10px/1 inherit;cursor:pointer;transition:color .2s,border-color .2s,background .2s}.map-toolbar button:hover,.map-toolbar button.active{border-color:rgba(64,211,220,.34);color:#c7fbf6;background:rgba(17,110,128,.32)}.map-toolbar button:disabled{opacity:.36;cursor:not-allowed}.map-toolbar .maximize-button{margin-left:3px;padding:0 10px;border-left:1px solid rgba(105,162,182,.23);border-radius:0;color:#dcf8ff}.map-toolbar .maximize-button:hover{color:#fff;background:rgba(25,117,147,.34)}
-.sst-legend{position:absolute;z-index:4;right:15px;bottom:37px;width:min(250px,38%);padding:8px 10px;border:1px solid rgba(91,170,191,.28);border-radius:5px;background:rgba(3,20,34,.76);backdrop-filter:blur(8px)}.sst-legend-bar{height:7px;border-radius:5px;background:linear-gradient(90deg,#0f2d78,#1e5aaa,#288cbe,#2db4aa,#6ec878,#dcd25a,#eb963c,#d23c28)}.sst-legend-labels{display:flex;justify-content:space-between;margin-top:5px;color:#a8c2cd;font-size:9px;font-variant-numeric:tabular-nums}.data-badge{position:absolute;z-index:4;left:14px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid rgba(67,151,176,.25);border-radius:4px;color:#8faebb;background:rgba(3,20,34,.74);font-size:9px;backdrop-filter:blur(8px)}.data-badge i{width:6px;height:6px;border-radius:50%;background:#5adcc8;box-shadow:0 0 8px #5adcc8}.data-badge.is-live i{background:#67f3b5;box-shadow:0 0 8px #67f3b5}
+.sst-legend{position:absolute;z-index:4;right:15px;bottom:37px;width:min(250px,38%);padding:8px 10px;border:1px solid rgba(91,170,191,.28);border-radius:5px;background:rgba(3,20,34,.76);backdrop-filter:blur(8px)}.sst-legend-bar{height:7px;border-radius:5px}.sst-legend-labels{display:flex;justify-content:space-between;margin-top:5px;color:#a8c2cd;font-size:9px;font-variant-numeric:tabular-nums}.data-badge{position:absolute;z-index:4;left:14px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid rgba(67,151,176,.25);border-radius:4px;color:#8faebb;background:rgba(3,20,34,.74);font-size:9px;backdrop-filter:blur(8px)}.data-badge i{width:6px;height:6px;border-radius:50%;background:#5adcc8;box-shadow:0 0 8px #5adcc8}.data-badge.is-live i{background:#67f3b5;box-shadow:0 0 8px #67f3b5}
 .enso-map-panel>>>.enso-globe-stage{background:radial-gradient(ellipse at center,rgba(14,70,95,.16),transparent 60%),#061a2a}.enso-map-panel>>>.globe-controls{right:15px;bottom:17px}.enso-map-panel>>>.globe-control{width:32px;height:32px;border-radius:5px;background:rgba(4,22,37,.83)}.enso-map-panel>>>.globe-region-label{z-index:3}.enso-map-panel>>>.leaflet-container{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:#071a2a}.enso-map-panel>>>.leaflet-tile{filter:saturate(.66) brightness(.72) hue-rotate(8deg)}.enso-map-panel>>>.leaflet-control-attribution{display:none}
 .is-compact .map-toolbar{top:8px;gap:2px;padding:3px}.is-compact .map-toolbar-left{left:8px}.is-compact .map-toolbar-right{right:8px}.is-compact .map-toolbar button{min-height:25px;padding:0 6px;font-size:9px}.is-compact .map-toolbar button i{display:none}.is-compact .map-toolbar .maximize-button i{display:inline}.is-compact .sst-legend{right:9px;bottom:31px;padding:6px 8px}.is-compact .data-badge{left:8px;bottom:8px;padding:5px 7px;font-size:8px}
 .is-maximized{border-color:rgba(61,190,205,.45);border-radius:0}.is-maximized .map-toolbar{top:20px}.is-maximized .map-toolbar-left{left:22px}.is-maximized .map-toolbar-right{right:22px}.is-maximized .sst-legend{right:24px;bottom:45px}.is-maximized .data-badge{left:22px;bottom:20px}

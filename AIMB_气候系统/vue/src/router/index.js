@@ -16,6 +16,8 @@ const routes = [
   { path: '/enso/models/mepm', name: 'LSTA-Swin预测结果', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/models/convlstm', name: 'ConvLSTM预测结果', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/forecast', name: '预测产品', redirect: '/enso/models/mepm' },
+  // Keep the original historical replay report available as a separate page.
+  // Historical event/model selectors remain available inside /enso/monitor.
   { path: '/enso/replay', name: '历史回放', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/validation', name: '提前期验证', component: () => import('../views/Enso2026.vue') },
   { path: '/enso/explainability', name: '物理解释', component: () => import('../views/Enso2026.vue') },

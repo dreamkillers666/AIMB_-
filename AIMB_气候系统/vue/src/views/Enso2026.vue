@@ -17,7 +17,7 @@
         <div class="system-intro-copy">
           <p class="system-intro-kicker">AIMB · CLIMATE INTELLIGENCE PLATFORM</p>
           <h2>面向 ENSO 年际预测与气候风险研判的一体化工作台</h2>
-          <p class="system-intro-lead">本平台围绕热带太平洋海气耦合过程，整合海温距平、次表层海温、风应力和气候指数等信息，提供 Niño3.4 / ONI 长提前期预测、模型产品对比、历史回放和可信验证，帮助用户从“看见信号”走到“解释信号、评估信号、服务决策”。</p>
+          <p class="system-intro-lead">本平台围绕热带太平洋海气耦合过程，整合海温距平、次表层海温、风应力和气候指数等信息，提供 Niño3.4 / ONI 长提前期预测、模型产品对比、历史事件与模型预测联动和可信验证，帮助用户从“看见信号”走到“解释信号、评估信号、服务决策”。</p>
           <div class="system-intro-actions">
             <el-button type="primary" icon="el-icon-monitor" @click="$router.push('/enso/monitor')">进入 ENSO 监测</el-button>
             <el-button plain icon="el-icon-data-analysis" @click="$router.push('/enso/models')">查看预测模型</el-button>
@@ -37,7 +37,7 @@
       <section class="system-intro-section">
         <div class="system-section-heading"><div><p class="system-intro-kicker">SYSTEM PROFILE</p><h2>系统简介</h2></div><span>从海气观测到区域气候影响</span></div>
         <div class="system-profile-grid">
-          <article class="system-profile-main"><p>ENSO 是连接热带太平洋海洋状态与全球大气环流的重要年际信号。平台以 Niño3.4 / ONI 为核心预测对象，将热带太平洋海温距平、次表层热状态、海表风应力等关键变量组织为可追溯的预测输入，并用长短期窗口提取海气演变中的持续性与转折信息。</p><p>用户可以在同一套工作流中查看监测场、运行预测产品、回放历史起报月份、对照实际观测、分析提前期技巧，并通过物理解释图和气候 NC 数据浏览器追踪模型关注的空间信号。预测结果还可以进一步衔接中国区域降水、温度和农业风险研判，为气候服务提供结构化证据。</p></article>
+          <article class="system-profile-main"><p>ENSO 是连接热带太平洋海洋状态与全球大气环流的重要年际信号。平台以 Niño3.4 / ONI 为核心预测对象，将热带太平洋海温距平、次表层热状态、海表风应力等关键变量组织为可追溯的预测输入，并用长短期窗口提取海气演变中的持续性与转折信息。</p><p>用户可以在同一套工作流中查看监测场、运行预测产品、选择历史事件与模型起报月份、对照实际观测、分析提前期技巧，并通过物理解释图和气候 NC 数据浏览器追踪模型关注的空间信号。预测结果还可以进一步衔接中国区域降水、温度和农业风险研判，为气候服务提供结构化证据。</p></article>
           <div class="system-profile-facts"><div><span>预测对象</span><strong>Niño3.4 / ONI</strong><small>月尺度海温指数距平</small></div><div><span>主要输入</span><strong>SSTA · SSTA150 · τx · τy</strong><small>海温、次表层与风应力场</small></div><div><span>输出形态</span><strong>轨迹 · 空间场 · 风险</strong><small>预测、解释与影响研判</small></div></div>
         </div>
       </section>
@@ -94,8 +94,16 @@
     </section>
 
     <section v-else-if="pageKey === 'replay'" class="content-grid">
-      <article class="panel controls-panel"><div class="panel-heading"><div><h2>2025-2026 历史回放</h2><p>选择起报月份</p></div></div><el-select v-model="replayStart" aria-label="选择历史回放起报月份" @change="loadReplay"><el-option v-for="m in replayOptions" :key="m" :label="m" :value="m" /></el-select><el-button type="primary" :loading="loading" @click="loadReplay">加载回放</el-button><div class="replay-agent-hint"><i class="el-icon-cpu"></i><span>ENSO 影响研判 Agent</span><small>随回放月份联动生成区域风险与农业影响分析</small></div></article>
-      <article class="panel chart-panel"><div class="panel-heading"><div><h2>{{ replayStart }} 起报回放轨迹</h2><p>预测 Niño3.4 月指数 vs 观测 Niño3.4 月指数（℃）</p></div><div><el-button size="mini" icon="el-icon-download" @click="exportJson">JSON</el-button><el-button size="mini" icon="el-icon-document" @click="exportCsv">CSV</el-button></div></div><div ref="chart" class="chart"></div></article>
+      <article class="panel controls-panel">
+        <div class="panel-heading"><div><h2>2025-2026 历史回放</h2><p>选择起报月份</p></div></div>
+        <el-select v-model="replayStart" aria-label="选择历史回放起报月份" @change="loadReplay"><el-option v-for="m in replayOptions" :key="m" :label="m" :value="m" /></el-select>
+        <el-button type="primary" :loading="loading" @click="loadReplay">加载回放</el-button>
+        <div class="replay-agent-hint"><i class="el-icon-cpu"></i><span>ENSO 影响研判 Agent</span><small>随回放月份联动生成区域风险与农业影响分析</small></div>
+      </article>
+      <article class="panel chart-panel">
+        <div class="panel-heading"><div><h2>{{ replayStart }} 起报回放轨迹</h2><p>预测 Niño3.4 月指数 vs 观测 Niño3.4 月指数（℃）</p></div><div><el-button size="mini" icon="el-icon-download" @click="exportJson">JSON</el-button><el-button size="mini" icon="el-icon-document" @click="exportCsv">CSV</el-button></div></div>
+        <div ref="chart" class="chart"></div>
+      </article>
       <article class="panel impact-report-panel">
         <div class="impact-report-topline"><span class="agent-status"><i></i> ENSO IMPACT INTELLIGENCE</span><span class="report-period">回放起报月份 <b>{{ replayStart }}</b></span></div>
         <template v-if="activeReplayImpactReport">
@@ -104,17 +112,10 @@
             <el-button class="generate-report-button" size="small" icon="el-icon-refresh" :loading="reportGenerating" @click="generateReplayImpactReport">{{ reportGenerating ? 'Agent 正在研判' : '重新研判' }}</el-button>
           </div>
           <div class="report-thesis"><span class="thesis-mark">研判摘要</span><p>{{ activeReplayImpactReport.summary }}</p></div>
-          <div class="impact-indicator-grid">
-            <div v-for="item in activeReplayImpactReport.indicators" :key="item.label" :class="['impact-indicator', item.tone]"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small>{{ item.detail }}</small></div>
-          </div>
+          <div class="impact-indicator-grid"><div v-for="item in activeReplayImpactReport.indicators" :key="item.label" :class="['impact-indicator', item.tone]"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small>{{ item.detail }}</small></div></div>
           <div class="report-highlights"><span v-for="item in activeReplayImpactReport.highlights" :key="item.label" :class="['highlight-chip', item.tone]"><b>{{ item.label }}</b>{{ item.value }}</span></div>
           <div class="report-section-heading"><div><span>01 / REGIONAL OUTLOOK</span><h3>中国区域气候风险研判</h3></div><small>基于 ENSO 遥相关型与季节尺度气候倾向</small></div>
-          <div class="regional-risk-table-wrap">
-            <table class="regional-risk-table">
-              <thead><tr><th>区域</th><th>降水倾向</th><th>温度倾向</th><th>主要风险</th><th>等级</th></tr></thead>
-              <tbody><tr v-for="row in activeReplayImpactReport.regionalRisks" :key="row.region"><td class="region-name">{{ row.region }}</td><td>{{ row.precipitation }}</td><td>{{ row.temperature }}</td><td>{{ row.risk }}</td><td><span :class="['risk-level', row.levelTone]">{{ row.level }}</span></td></tr></tbody>
-            </table>
-          </div>
+          <div class="regional-risk-table-wrap"><table class="regional-risk-table"><thead><tr><th>区域</th><th>降水倾向</th><th>温度倾向</th><th>主要风险</th><th>等级</th></tr></thead><tbody><tr v-for="row in activeReplayImpactReport.regionalRisks" :key="row.region"><td class="region-name">{{ row.region }}</td><td>{{ row.precipitation }}</td><td>{{ row.temperature }}</td><td>{{ row.risk }}</td><td><span :class="['risk-level', row.levelTone]">{{ row.level }}</span></td></tr></tbody></table></div>
           <div class="report-detail-grid">
             <section class="report-detail-card agriculture-card"><div class="detail-card-title"><span>02 / AGRICULTURE</span><h3>农业与产业影响</h3></div><ul><li v-for="(item, index) in activeReplayImpactReport.agriculture" :key="index">{{ item }}</li></ul></section>
             <section class="report-detail-card actions-card"><div class="detail-card-title"><span>03 / RESPONSE</span><h3>建议关注与行动</h3></div><div v-for="action in activeReplayImpactReport.actions" :key="action.tag" class="action-row"><b>{{ action.tag }}</b><div><strong>{{ action.title }}</strong><p>{{ action.text }}</p></div></div></section>
@@ -122,17 +123,16 @@
           <div class="uncertainty-note"><i class="el-icon-warning-outline"></i><div><b>不确定性与更新条件</b><p>{{ activeReplayImpactReport.uncertainty }}</p></div></div>
           <div class="report-footer"><span>分析框架：ENSO 位相识别 · 遥相关诊断 · 区域风险映射 · 农业暴露评估</span><span>置信度：{{ activeReplayImpactReport.confidence }}</span></div>
         </template>
-        <div v-else class="report-empty-state">
-          <div class="empty-agent-icon"><i class="el-icon-cpu"></i></div><span class="report-kicker">ENSO IMPACT AGENT</span><h2>{{ replayStart }} 影响研判报告</h2><p>该月份尚未预置专属研判。Agent 将结合当前回放曲线、ENSO 位相和区域气候响应，生成中国降水、温度及农业风险分析。</p><el-button type="primary" size="small" icon="el-icon-magic-stick" :loading="reportGenerating" @click="generateReplayImpactReport">{{ reportGenerating ? '正在生成技术报告…' : '生成影响研判报告' }}</el-button></div>
+        <div v-else class="report-empty-state"><div class="empty-agent-icon"><i class="el-icon-cpu"></i></div><span class="report-kicker">ENSO IMPACT AGENT</span><h2>{{ replayStart }} 影响研判报告</h2><p>该月份尚未预置专属研判。Agent 将结合当前回放曲线、ENSO 位相和区域气候响应，生成中国降水、温度及农业风险分析。</p><el-button type="primary" size="small" icon="el-icon-magic-stick" :loading="reportGenerating" @click="generateReplayImpactReport">{{ reportGenerating ? '正在生成技术报告…' : '生成影响研判报告' }}</el-button></div>
       </article>
     </section>
 
     <section v-else-if="pageKey === 'validation'" class="panel table-panel">
       <div class="panel-heading">
-        <div><h2>逐提前期验证与实际比较</h2><p v-if="comparisonReplayStart">整体验证与 {{ comparisonReplayStart }} 回放案例</p></div>
+        <div><h2>逐提前期验证与实际比较</h2><p v-if="comparisonReplayStart">整体验证与 {{ comparisonReplayStart }} 历史案例</p></div>
         <div class="validation-actions">
-          <el-button size="mini" type="primary" plain icon="el-icon-data-analysis" @click="openComparisonDialog">选择历史回放对比</el-button>
-          <el-button v-if="comparisonReplayStart" size="mini" icon="el-icon-video-play" @click="openReplayComparison">查看回放</el-button>
+          <el-button size="mini" type="primary" plain icon="el-icon-data-analysis" @click="openComparisonDialog">选择历史案例对比</el-button>
+          <el-button v-if="comparisonReplayStart" size="mini" icon="el-icon-video-play" @click="openReplayComparison">查看历史回放</el-button>
           <el-button size="mini" icon="el-icon-document" @click="exportCsv">导出 CSV</el-button>
         </div>
       </div>
@@ -165,7 +165,7 @@
           <span class="report-status"><i class="el-icon-circle-check"></i> 分析完成</span>
         </div>
         <div class="report-metrics">
-          <div class="report-metric"><span>案例 MAE</span><strong>{{ formatValidationValue(validationCaseSummary.mae) }} <small>℃</small></strong><em>单次回放轨迹</em></div>
+          <div class="report-metric"><span>案例 MAE</span><strong>{{ formatValidationValue(validationCaseSummary.mae) }} <small>℃</small></strong><em>单次历史轨迹</em></div>
           <div class="report-metric"><span>案例 RMSE</span><strong>{{ formatValidationValue(validationCaseSummary.rmse) }} <small>℃</small></strong><em>强调大误差惩罚</em></div>
           <div class="report-metric"><span>平均偏差</span><strong :class="validationCaseSummary.bias < 0 ? 'cold-bias' : 'warm-bias'">{{ validationCaseSummary.bias > 0 ? '+' : '' }}{{ formatValidationValue(validationCaseSummary.bias) }} <small>℃</small></strong><em>{{ validationCaseSummary.bias < 0 ? '整体偏冷' : validationCaseSummary.bias > 0 ? '整体偏暖' : '无明显系统偏差' }}</em></div>
           <div class="report-metric"><span>三档状态命中率</span><strong>{{ validationCaseSummary.stateAccuracy }}<small>%</small></strong><em>{{ validationCaseSummary.stateHits }} / {{ validationCaseSummary.count }} 目标月</em></div>
@@ -187,11 +187,11 @@
           </section>
           <aside class="report-conclusion"><span>评估结论</span><strong>{{ activeValidationReport.verdict }}</strong><p>{{ formatValidationReportText(activeValidationReport.nextStep) }}</p></aside>
         </div>
-        <div class="report-footnote"><i class="el-icon-info"></i> 命中率按单月 Niño3.4 距平分为冷侧（≤−0.5℃）、中性（>−0.5℃且<+0.5℃）和暖侧（≥+0.5℃）三档，仅表示本回放轨迹的状态分档一致率，不等同于官方 ONI 事件准确率。案例分数基于可用配对月份；总体验证 MAE 按同提前期的历史样本汇总，二者统计口径不同。</div>
+        <div class="report-footnote"><i class="el-icon-info"></i> 命中率按单月 Niño3.4 距平分为冷侧（≤−0.5℃）、中性（>−0.5℃且<+0.5℃）和暖侧（≥+0.5℃）三档，仅表示本历史轨迹的状态分档一致率，不等同于官方 ONI 事件准确率。案例分数基于可用配对月份；总体验证 MAE 按同提前期的历史样本汇总，二者统计口径不同。</div>
       </article>
       <div class="subsection"><h3>论文消融结果</h3><el-table :data="paperMetrics" size="mini"><el-table-column prop="variant" label="模型变体"/><el-table-column prop="pcc" label="PCC"/></el-table></div>
-      <el-dialog title="选择历史回放案例" :visible.sync="comparisonDialogVisible" width="420px" append-to-body>
-        <div class="comparison-picker"><span>回放起报月份</span><el-select v-model="validationReplayStart" aria-label="历史回放起报月份"><el-option v-for="m in replayOptions" :key="m" :label="m" :value="m" /></el-select></div>
+      <el-dialog title="选择历史案例" :visible.sync="comparisonDialogVisible" width="420px" append-to-body>
+        <div class="comparison-picker"><span>起报月份</span><el-select v-model="validationReplayStart" aria-label="历史案例起报月份"><el-option v-for="m in replayOptions" :key="m" :label="m" :value="m" /></el-select></div>
         <span slot="footer"><el-button size="small" @click="comparisonDialogVisible = false">取消</el-button><el-button size="small" type="primary" @click="applyReplayComparison">开始比较</el-button></span>
       </el-dialog>
     </section>
@@ -229,7 +229,7 @@ import PredictionPage from './enso_prediction.vue'
 import ConvlstmPrediction from './convlstm_prediction.vue'
 import UserGridData from './User_GridData.vue'
 
-// ENSO 影响研判 Agent 的产品样例。报告随历史回放起报月份切换，内容由
+// ENSO 影响研判 Agent 的产品样例。报告随历史案例起报月份切换，内容由
 // ENSO 位相、环流响应、区域气候风险和农业暴露度四类证据组织，便于替换为后端 Agent 返回值。
 const replayImpactReports = Object.freeze({
   '2025-01': {
@@ -240,7 +240,7 @@ const replayImpactReports = Object.freeze({
     phaseValue: '−0.36 ℃',
     confidence: '中高',
     horizon: '2025 年 2–4 月',
-    summary: '回放结果指向赤道中东太平洋冷却信号逐步减弱，西太平洋暖池与副热带高压偏强的组合仍可能维持。未来一季中国气候风险以南方阶段性水汽偏弱、北方温度偏高和春季农业干旱暴露上升为主，需关注冷空气过程与暖湿输送的快速切换。',
+    summary: '历史案例指向赤道中东太平洋冷却信号逐步减弱，西太平洋暖池与副热带高压偏强的组合仍可能维持。未来一季中国气候风险以南方阶段性水汽偏弱、北方温度偏高和春季农业干旱暴露上升为主，需关注冷空气过程与暖湿输送的快速切换。',
     indicators: [
       { label: 'Niño3.4 预测中心', value: '−0.36 ℃', detail: '较基准偏冷 · 衰减', tone: 'cyan' },
       { label: '中国降水倾向', value: '南方偏少', detail: '华南约 −10%～−20%', tone: 'gold' },
@@ -278,7 +278,7 @@ const replayImpactReports = Object.freeze({
     phaseValue: '−0.22 ℃',
     confidence: '中等',
     horizon: '2025 年 3–5 月',
-    summary: '2025 年 2 月回放显示冷异常接近阈值，海气耦合逐步转弱，ENSO 对中国气候的直接约束减小。未来春季呈现“北方偏暖、南方降水时空不均”的概率结构，前期干旱风险仍在，但暖湿季风启动后华南局地强对流和短时洪涝风险会快速抬升。',
+    summary: '2025 年 2 月历史案例显示冷异常接近阈值，海气耦合逐步转弱，ENSO 对中国气候的直接约束减小。未来春季呈现“北方偏暖、南方降水时空不均”的概率结构，前期干旱风险仍在，但暖湿季风启动后华南局地强对流和短时洪涝风险会快速抬升。',
     indicators: [
       { label: 'Niño3.4 预测中心', value: '−0.22 ℃', detail: '接近中性 · 转暖迹象', tone: 'cyan' },
       { label: '中国降水倾向', value: '南北分化', detail: '华南 −5%～+10%', tone: 'gold' },
@@ -332,7 +332,7 @@ export default {
       systemCapabilities: [
         { title: 'ENSO 监测', description: '查看 Niño3.4、ONI、SOI、海温距平、风场和海洋热含量的动态状态。', icon: 'el-icon-monitor', tone: 'cyan', path: '/enso/monitor', action: '打开监测平台' },
         { title: '预测模型', description: '对比 LSTA-Swin 与 ConvLSTM 的长提前期预测轨迹和空间场输出。', icon: 'el-icon-data-analysis', tone: 'gold', path: '/enso/models', action: '查看模型产品' },
-        { title: '历史回放', description: '按起报月份回放预测路径，与对应月份观测记录进行配对比较。', icon: 'el-icon-video-play', tone: 'violet', path: '/enso/replay', action: '进入历史回放' },
+        { title: '历史数据', description: '在 ENSO 监测平台中选择历史事件或 LSTA-Swin 起报月份，联动查看空间场、指数和风场。', icon: 'el-icon-time', tone: 'violet', path: '/enso/monitor?view=history', action: '进入历史数据' },
         { title: '提前期验证', description: '从 PCC、MAE、RMSE 和状态分档等角度评估预测技巧的衰减与稳定性。', icon: 'el-icon-s-check', tone: 'green', path: '/enso/validation', action: '查看验证结果' },
         { title: '物理解释', description: '通过时空演变、相关性和显著性图，追踪模型关注的海气信号。', icon: 'el-icon-view', tone: 'blue', path: '/enso/explainability', action: '分析物理信号' },
         { title: '气候 NC', description: '浏览 NetCDF 格点变量与时次，为区域气候影响分析提供数据底座。', icon: 'el-icon-picture-outline', tone: 'purple', path: '/enso/climate-data', action: '打开数据浏览' }
@@ -340,7 +340,7 @@ export default {
       systemWorkflow: [
         { number: '01', title: '汇聚海气输入', description: '整理海表与次表层海温、风应力及相关气候指数，统一时空口径。' },
         { number: '02', title: '生成 ENSO 预测', description: '由模型提取长短期演变信息，输出 Niño3.4 / ONI 轨迹和空间信号。' },
-        { number: '03', title: '回放与可信验证', description: '选择历史起报月份，逐提前期对照观测，识别偏差、转折和不确定性。' },
+        { number: '03', title: '历史数据与可信验证', description: '选择历史事件或模型起报月份，逐提前期对照观测，识别偏差、转折和不确定性。' },
         { number: '04', title: '形成气候服务', description: '结合遥相关和区域资料，支撑中国降水、温度与农业风险研判。' }
       ],
       variables: ['SSTA', 'SSTA150', 'τx', 'τy'], selectedVariable: 'SSTA', selectedFigure: 'spatiotemporal', forecastStart: '2023-03', leadMonths: 20,
@@ -401,8 +401,8 @@ export default {
       const reports = {
         '2025-01': {
           title: '弱拉尼娜衰减与暖位相转折漏报诊断',
-          summary: '本次回放能够维持弱冷位相的背景判断，案例相关性为 {{pcc}}，但振幅与转折时点误差突出：平均偏差 {{bias}}℃，三档状态命中率 {{accuracy}}%。预测序列持续停留在弱冷区间，未能跟随 2025 年春夏实际序列向中性及暖侧跃迁；误差随提前期扩大，说明当前外推对海气耦合转换信号响应不足。',
-          findings: ['有效配对覆盖 {{count}} 个月，案例 MAE {{mae}}℃、RMSE {{rmse}}℃；案例 PCC {{pcc}}反映整体共变仍有一定一致性，但不能替代逐月状态命中率。', '冷侧背景延续被过度平滑，预测振幅明显收缩；后段暖侧增强未被提前捕捉，误差由相位偏差与振幅低估共同主导。', '三档状态命中 {{hits}}/{{count}} 个月（{{accuracy}}%）。单月分档用于回放诊断，不能解释为官方 ONI 事件准确率。'],
+          summary: '本次历史案例能够维持弱冷位相的背景判断，案例相关性为 {{pcc}}，但振幅与转折时点误差突出：平均偏差 {{bias}}℃，三档状态命中率 {{accuracy}}%。预测序列持续停留在弱冷区间，未能跟随 2025 年春夏实际序列向中性及暖侧跃迁；误差随提前期扩大，说明当前外推对海气耦合转换信号响应不足。',
+          findings: ['有效配对覆盖 {{count}} 个月，案例 MAE {{mae}}℃、RMSE {{rmse}}℃；案例 PCC {{pcc}}反映整体共变仍有一定一致性，但不能替代逐月状态命中率。', '冷侧背景延续被过度平滑，预测振幅明显收缩；后段暖侧增强未被提前捕捉，误差由相位偏差与振幅低估共同主导。', '三档状态命中 {{hits}}/{{count}} 个月（{{accuracy}}%）。单月分档用于历史案例诊断，不能解释为官方 ONI 事件准确率。'],
           causes: ['递减的单一趋势项难以表达“弱冷衰减—中性过渡—暖异常发展”的非线性转换，远期预测逐步向平滑背景态收缩。', 'Niño3.4 指数序列缺少对西风爆发、暖水体积与次表层热含量重建的显式约束，关键先导信号可能未被充分传递到长提前期输出。', '单案例有效月份有限，事件转折样本及季节位相覆盖不足；以逐月观测作参照时，月际噪声也会放大局地误差。'],
           recommendations: [{ title: '模型结构｜显式建模相位转换', detail: '在 LSTA-Swin 主干上增加 ENSO 状态转移或多任务相位头，同时预测 Niño3.4 连续值、变化率和冷/中/暖概率；对 3–9 个月转折窗口采用门控残差解码，避免远期输出过度趋平。' }, { title: '数据处理｜补齐海气先导信号', detail: '加入暖水体积 / 上层海洋热含量、赤道西风爆发、海表风应力及次表层温度等特征；按起报时刻严格进行时间切分和标准化，核验缺测填补与异常值处理是否引入相位滞后。' }, { title: '验证设计｜按事件和季节分层', detail: '在滚动起报回报中报告事件转折月误差、振幅误差、PCC、MAE、RMSE 与三档命中率，并给出 bootstrap 置信区间；对 6–12 个月提前期开展独立校准。' }],
           verdict: '背景位相有参考价值，转折预报能力不足',
@@ -419,7 +419,7 @@ export default {
         }
       }
       const report = reports[month]
-      if (!report) return { title: `${month} 回放轨迹定量诊断`, summary: '本案例覆盖 {{count}} 个有效目标月，MAE {{mae}}℃、RMSE {{rmse}}℃，平均偏差 {{bias}}℃；三档状态命中率 {{accuracy}}%。请结合逐提前期误差与整体验证基准识别误差随提前期的变化。', findings: ['案例指标由当前所选回放月的逐提前期预测与观测配对计算。', '整体技巧由历史回报样本汇总，代表长期技巧背景，不等同于单次轨迹效果。', '建议结合空间场、事件阶段与起报季节检查误差是否具有稳定结构。'], causes: ['单个起报案例无法独立区分初始场误差、海气耦合噪声和模式结构误差。', '远期误差受 ENSO 相位转变、季节锁相和初始海洋热含量不确定性共同影响。', '观测覆盖或有效样本变化会影响指标稳定性，需要在滚动回报中持续核验。'], recommendations: [{ title: '模型结构｜建立多目标诊断', detail: '联合预测 Niño3.4 值、变化率与状态概率，并对不同提前期设置独立校准。' }, { title: '数据处理｜加强时序与样本审查', detail: '采用按年份分组的严格回报切分，统一距平基准、缺测掩膜和输入标准化口径。' }, { title: '验证设计｜按事件生命周期分层', detail: '补充事件级误差、状态转类命中、置信区间和空间场验证，区分偶然偏差与系统性问题。' }], verdict: '单案例诊断需结合滚动验证与物理场证据', nextStep: '优先复核相同提前期、相近季节及相同 ENSO 阶段的多起报回报结果。' }
+      if (!report) return { title: `${month} 历史轨迹定量诊断`, summary: '本案例覆盖 {{count}} 个有效目标月，MAE {{mae}}℃、RMSE {{rmse}}℃，平均偏差 {{bias}}℃；三档状态命中率 {{accuracy}}%。请结合逐提前期误差与整体验证基准识别误差随提前期的变化。', findings: ['案例指标由当前所选历史月份的逐提前期预测与观测配对计算。', '整体技巧由历史回报样本汇总，代表长期技巧背景，不等同于单次轨迹效果。', '建议结合空间场、事件阶段与起报季节检查误差是否具有稳定结构。'], causes: ['单个起报案例无法独立区分初始场误差、海气耦合噪声和模式结构误差。', '远期误差受 ENSO 相位转变、季节锁相和初始海洋热含量不确定性共同影响。', '观测覆盖或有效样本变化会影响指标稳定性，需要在滚动回报中持续核验。'], recommendations: [{ title: '模型结构｜建立多目标诊断', detail: '联合预测 Niño3.4 值、变化率与状态概率，并对不同提前期设置独立校准。' }, { title: '数据处理｜加强时序与样本审查', detail: '采用按年份分组的严格回报切分，统一距平基准、缺测掩膜和输入标准化口径。' }, { title: '验证设计｜按事件生命周期分层', detail: '补充事件级误差、状态转类命中、置信区间和空间场验证，区分偶然偏差与系统性问题。' }], verdict: '单案例诊断需结合滚动验证与物理场证据', nextStep: '优先复核相同提前期、相近季节及相同 ENSO 阶段的多起报回报结果。' }
       return { ...report, title: `${month.slice(0, 4)} 年 ${Number(month.slice(5, 7))} 月 · ${report.title}`, summary: this.fillValidationReport(report.summary, common), findings: report.findings.map(item => this.fillValidationReport(item, common)) }
     },
     currentPage() {
@@ -533,7 +533,7 @@ export default {
         report.generatedAt = generatedAt
         report.horizon = `${addMonth(1)}–${addMonth(3)}`
         if (!replayImpactReports[month]) {
-          report.summary = `${year} 年 ${monthNumber} 月历史回放显示，${seed.phase}对应的热带太平洋海温异常仍可为未来季节气候倾向提供背景约束。以下研判结合当前 Niño3.4 回放轨迹、ENSO 遥相关型及区域季节信号，重点识别中国降水、温度与农业生产中的风险窗口，并建议随月度观测滚动更新。`
+          report.summary = `${year} 年 ${monthNumber} 月历史案例显示，${seed.phase}对应的热带太平洋海温异常仍可为未来季节气候倾向提供背景约束。以下研判结合当前 Niño3.4 历史轨迹、ENSO 遥相关型及区域季节信号，重点识别中国降水、温度与农业生产中的风险窗口，并建议随月度观测滚动更新。`
           const replay = demoCases.replay(month)
           const center = replay.series && replay.series[0] && replay.series[0].value
           report.indicators[0].value = Number.isFinite(center) ? `${center > 0 ? '+' : ''}${center.toFixed(2)} ℃` : seed.phaseValue

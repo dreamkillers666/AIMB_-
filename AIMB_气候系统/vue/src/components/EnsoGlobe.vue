@@ -46,6 +46,7 @@
 <script>
 import * as THREE from 'three';
 import earthMapUrl from '../assets/earth.jpg';
+import { ensoFieldColor } from '../data/ensoColorScale';
 
 const RADIUS = 2;
 const PARTICLE_COUNT = 3600;
@@ -78,6 +79,7 @@ export default {
   props: {
     windData: { type: Array, default: () => [] },
     sstData: { type: Object, default: null },
+    sstMode: { type: String, default: 'absolute' },
     layer: { type: String, default: 'wind' },
     layout: { type: String, default: 'showcase' }
   },
@@ -89,6 +91,9 @@ export default {
       this.refreshWind();
     },
     sstData() {
+      this.refreshSurfaceTextures();
+    },
+    sstMode() {
       this.refreshSurfaceTextures();
     },
     layer() {
@@ -521,22 +526,7 @@ export default {
     },
 
     sstColor(value) {
-      const stops = [
-        { value: -2, rgb: [29, 66, 132] },
-        { value: 0, rgb: [38, 137, 184] },
-        { value: 8, rgb: [74, 190, 193] },
-        { value: 16, rgb: [120, 194, 117] },
-        { value: 22, rgb: [220, 207, 96] },
-        { value: 28, rgb: [235, 135, 66] },
-        { value: 34, rgb: [194, 55, 52] }
-      ];
-      const bounded = Math.max(stops[0].value, Math.min(stops[stops.length - 1].value, value));
-      let upperIndex = stops.findIndex((stop) => stop.value >= bounded);
-      if (upperIndex <= 0) return stops[0].rgb;
-      const lower = stops[upperIndex - 1];
-      const upper = stops[upperIndex];
-      const ratio = (bounded - lower.value) / (upper.value - lower.value);
-      return lower.rgb.map((channel, index) => Math.round(channel + (upper.rgb[index] - channel) * ratio));
+      return ensoFieldColor(value, this.sstMode === 'anomaly');
     },
 
     refreshSurfaceTextures() {
@@ -617,7 +607,7 @@ export default {
       const streaks = new THREE.LineSegments(streakGeometry, new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.86,
         depthWrite: false
       }));
       state.group.add(streaks);
@@ -628,7 +618,7 @@ export default {
     windColor(speed, target) {
       const color = target || new THREE.Color();
       const strength = Math.max(0, Math.min(1, speed / 22));
-      color.setHSL(0.64 - strength * 0.32, 0.78, 0.56);
+      color.setHSL(0.64 - strength * 0.36, 0.86, 0.58);
       return color;
     },
 
@@ -825,7 +815,7 @@ export default {
       const colorAttribute = state.particles.geometry.attributes.color.array;
       const streakColorAttribute = state.streaks.geometry.attributes.color.array;
       const sphereRadius = RADIUS + 0.026;
-      const windScale = 0.42;
+      const windScale = 0.84;
       const color = state.windColor;
 
       for (let index = 0; index < state.particleState.length; index += 1) {

@@ -13,7 +13,8 @@
 
     <el-menu-item index="/enso/overview"><i class="el-icon-info"></i><span slot="title">系统介绍</span></el-menu-item>
     <el-menu-item index="/enso/models"><i class="el-icon-data-line"></i><span slot="title">预测模型</span></el-menu-item>
-    <el-menu-item index="/enso/replay"><i class="el-icon-time"></i><span slot="title">历史回放</span></el-menu-item>
+    <el-menu-item index="/enso/monitor"><i class="el-icon-monitor"></i><span slot="title">ENSO监测</span></el-menu-item>
+    <el-menu-item index="/enso/replay"><i class="el-icon-video-play"></i><span slot="title">历史回放</span></el-menu-item>
     <el-menu-item index="/enso/validation"><i class="el-icon-s-check"></i><span slot="title">提前期验证</span></el-menu-item>
     <el-menu-item index="/enso/explainability"><i class="el-icon-view"></i><span slot="title">物理解释</span></el-menu-item>
     <el-menu-item index="/enso/data-model"><i class="el-icon-folder-opened"></i><span slot="title">数据与模型</span></el-menu-item>
