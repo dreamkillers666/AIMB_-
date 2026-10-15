@@ -37,6 +37,8 @@ import 'leaflet/dist/leaflet.css'
 import EnsoGlobe from './EnsoGlobe.vue'
 import presetSst from '../data/presetSst.json'
 import { ensoFieldColor, SST_COLOR_GRADIENT } from '../data/ensoColorScale'
+import blueMarbleUrl from '../assets/earth-blue-marble.jpg'
+import waterMaskUrl from '../assets/earth-water.png'
 
 if (!window.L) window.L = L
 require('leaflet-velocity')
@@ -58,6 +60,39 @@ const SstOverlayLayer = L.Layer.extend({
     // 海温色块透明度：海温模式 0.65；叠加模式降为 0.42 作"海洋底色"
     this._opacity = 0.65;
     this._anomaly = false;
+    // 海/陆掩膜（earth-water.png：白=海洋、黑=陆地），陆地处海温完全透明
+    this._mask = null;
+    this._maskPromise = this._loadMask().then((mask) => {
+      // 掩膜晚于首帧到达时重绘一次，补上陆地裁切
+      if (mask && this._map) this._reset();
+      return mask;
+    });
+  },
+
+  // 加载水体掩膜到灰度缓存；海岸线 40~140 灰度 smoothstep 柔边（与 3D 球一致）
+  _loadMask() {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const d = ctx.getImageData(0, 0, w, h).data;
+        const gray = new Uint8Array(w * h);
+        for (let i = 0; i < w * h; i++) gray[i] = d[i * 4];
+        this._mask = { w, h, data: gray };
+        resolve(this._mask);
+      };
+      img.onerror = () => {
+        this._mask = null;
+        resolve(null);
+      };
+      img.src = waterMaskUrl;
+    });
   },
 
   onAdd(map) {
@@ -268,7 +303,8 @@ const SstOverlayLayer = L.Layer.extend({
     // 防御：zoom 非有限值时跳过随 zoom 的步长调整（避免 NaN 传播）
     if (isFinite(zoom)) {
       // 高倍放大时 1° 网格在屏幕上很大，可加大步长（上限 8）
-      const pxPerDeg = (256 * Math.pow(2, zoom)) / 360;
+      // EPSG:4326 下全球宽 = 512 * 2^zoom
+      const pxPerDeg = (512 * Math.pow(2, zoom)) / 360;
       step = Math.max(step, Math.min(8, Math.round(pxPerDeg / 6)));
     }
     // 缩放动画中更粗采样，保证单帧重绘够快
@@ -321,6 +357,21 @@ const SstOverlayLayer = L.Layer.extend({
     for (let x = 0; x <= ow; x += step) {
       colLons[x] = map.unproject(L.point(x + offX, offY), zoom).lng;
     }
+    const hasMask = !!this._mask;
+    // 掩膜内的经度 wrap 采样函数：视图跨 ±180° 时仍能取到正确海/陆
+    const sampleMask = (longitude, latitude) => {
+      const m = this._mask;
+      let mx = Math.floor(((longitude + 180) / 360) * m.w);
+      mx = ((mx % m.w) + m.w) % m.w;
+      let my = Math.floor(((90 - latitude) / 180) * m.h);
+      if (my < 0) my = 0;
+      else if (my > m.h - 1) my = m.h - 1;
+      const v = m.data[my * m.w + mx];
+      if (v <= 40) return 0;
+      if (v >= 140) return 1;
+      const t = (v - 40) / 100;
+      return t * t * (3 - 2 * t);
+    };
     // 用 ImageData 直接写像素（比逐格 fillRect 快得多）；复用缓存避免动画逐帧 GC
     if (!this._imgData || this._imgData.width !== ow || this._imgData.height !== oh) {
       this._imgData = octx.createImageData(ow, oh);
@@ -333,6 +384,10 @@ const SstOverlayLayer = L.Layer.extend({
     for (let y = 0; y < oh; y += step) {
       const j0 = (la1 - rowLats[y]) / dy;
       const yEnd = Math.min(y + step, oh);
+      // 行内纬度线性插值（EPSG:4326 屏幕 y 与纬度严格线性）
+      const lat0 = rowLats[y];
+      const lat1 = rowLats[yEnd] !== undefined ? rowLats[yEnd] : lat0;
+      const fy = (yEnd - y) > 0 ? 1 / (yEnd - y) : 0;
       for (let x = 0; x < ow; x += step) {
         const i0 = (colLons[x] - lo1) / dx;
         const val = this._bilinear(data, nx, ny, i0, j0);
@@ -341,14 +396,24 @@ const SstOverlayLayer = L.Layer.extend({
         const ci = this._anomaly ? Math.round(((t + 3) / 6) * 255) : Math.round(((t + 2) / 34) * 255);
         const c = this._lut[ci];
         const xEnd = Math.min(x + step, ow);
+        // 掩膜逐像素采样（经度/纬度行内插值），海岸线柔边消除块状锯齿
+        const lon0 = colLons[x];
+        const lon1 = colLons[xEnd] !== undefined ? colLons[xEnd] : lon0;
+        const fx = (xEnd - x) > 0 ? 1 / (xEnd - x) : 0;
         for (let yy = y; yy < yEnd; yy++) {
           const rowBase = yy * ow;
+          const lat = hasMask ? lat0 + (lat1 - lat0) * (yy - y) * fy : 0;
           for (let xx = x; xx < xEnd; xx++) {
             const o = (rowBase + xx) * 4;
             px[o] = c[0];
             px[o + 1] = c[1];
             px[o + 2] = c[2];
-            px[o + 3] = 255;
+            if (hasMask) {
+              const lon = lon0 + (lon1 - lon0) * (xx - x) * fx;
+              px[o + 3] = Math.round(255 * sampleMask(lon, lat));
+            } else {
+              px[o + 3] = 255;
+            }
           }
         }
       }
@@ -356,7 +421,8 @@ const SstOverlayLayer = L.Layer.extend({
     octx.putImageData(img, 0, 0);
   },
 
-  // 双线性插值：在网格点之间插值，返回插值后的海温；越界或缺测返回 null
+  // 双线性插值：缺测邻居按权重剔除（加权插值），海温可平滑延伸到海岸线；
+  // 全部邻居缺测（陆地内部）返回 null → 透明
   _bilinear(data, nx, ny, i0, j0) {
     // 防御：非有限网格坐标（NaN/Infinity）直接返回 null，避免 NaN 传播
     if (!isFinite(i0) || !isFinite(j0)) return null;
@@ -370,15 +436,19 @@ const SstOverlayLayer = L.Layer.extend({
     const j1 = j + 1;
     const base = j * nx;
     const base1 = j1 * nx;
-    const v00 = data[base + i];
-    const v10 = data[base + i1];
-    const v01 = data[base1 + i];
-    const v11 = data[base1 + i1];
-    // 任一邻居缺测（陆地边缘）→ 不插值，保持透明
-    if (!this._isValid(v00) || !this._isValid(v10) || !this._isValid(v01) || !this._isValid(v11)) return null;
-    const v0 = v00 * (1 - fi) + v10 * fi;
-    const v1 = v01 * (1 - fi) + v11 * fi;
-    return v0 * (1 - fj) + v1 * fj;
+    let weighted = 0;
+    let weight = 0;
+    const push = (v, w) => {
+      if (this._isValid(v)) {
+        weighted += v * w;
+        weight += w;
+      }
+    };
+    push(data[base + i], (1 - fi) * (1 - fj));
+    push(data[base + i1], fi * (1 - fj));
+    push(data[base1 + i], (1 - fi) * fj);
+    push(data[base1 + i1], fi * fj);
+    return weight > 0 ? weighted / weight : null;
   },
 
   _isValid(v) {
@@ -700,15 +770,18 @@ export default {
     initMap() {
       const el = this.$refs.mapEl
       if (!el || this.map) return
+      // EPSG:4326 等经纬度投影，与 NASA Blue Marble 底图（等经纬度贴图）严格对齐
       this.map = L.map(el, {
-        zoomControl: false, attributionControl: true, minZoom: 2, maxZoom: 8,
-        center: [8, 170], zoom: 2.5, zoomSnap: 0.5, worldCopyJump: true,
+        zoomControl: false, attributionControl: false, minZoom: 0, maxZoom: 4.5,
+        center: [8, 170], zoom: 0.75, zoomSnap: 0.25, worldCopyJump: true,
+        crs: L.CRS.EPSG4326,
         fadeAnimation: true, bounceAtZoomLimits: false, dragging: true, tap: true,
         touchZoom: true, scrollWheelZoom: true, inertia: true
       })
       this.map.setMaxBounds(L.latLngBounds([-85, -180], [85, 180]))
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 8, attribution: '&copy; OpenStreetMap contributors', noWrap: false
+      // 本地高清底图（4096×2048），无外网依赖；海岸线由影像给出，与海温叠加风格统一
+      L.imageOverlay(blueMarbleUrl, L.latLngBounds([[-90, -180], [90, 180]]), {
+        interactive: false, className: 'enso-basemap-img'
       }).addTo(this.map)
       this.velocityLayer = L.velocityLayer({
         displayValues: false, displayOptions: { velocityType: '', emptyString: '' },
@@ -781,7 +854,7 @@ export default {
 .map-2d,.map-vignette{position:absolute;inset:0}.map-2d{z-index:0;background:#061a2a}.map-vignette{z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 48%,rgba(2,12,24,.46) 100%),linear-gradient(180deg,rgba(3,16,28,.14),transparent 24%,transparent 77%,rgba(3,16,28,.35))}
 .map-toolbar{position:absolute;z-index:5;top:12px;display:flex;gap:4px;padding:4px;border:1px solid rgba(64,164,192,.3);border-radius:7px;background:rgba(3,20,34,.76);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(9px)}.map-toolbar-left{left:12px}.map-toolbar-right{right:12px}.map-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:0 9px;border:1px solid transparent;border-radius:4px;color:#96b6c4;background:transparent;font:600 10px/1 inherit;cursor:pointer;transition:color .2s,border-color .2s,background .2s}.map-toolbar button:hover,.map-toolbar button.active{border-color:rgba(64,211,220,.34);color:#c7fbf6;background:rgba(17,110,128,.32)}.map-toolbar button:disabled{opacity:.36;cursor:not-allowed}.map-toolbar .maximize-button{margin-left:3px;padding:0 10px;border-left:1px solid rgba(105,162,182,.23);border-radius:0;color:#dcf8ff}.map-toolbar .maximize-button:hover{color:#fff;background:rgba(25,117,147,.34)}
 .sst-legend{position:absolute;z-index:4;right:15px;bottom:37px;width:min(250px,38%);padding:8px 10px;border:1px solid rgba(91,170,191,.28);border-radius:5px;background:rgba(3,20,34,.76);backdrop-filter:blur(8px)}.sst-legend-bar{height:7px;border-radius:5px}.sst-legend-labels{display:flex;justify-content:space-between;margin-top:5px;color:#a8c2cd;font-size:9px;font-variant-numeric:tabular-nums}.data-badge{position:absolute;z-index:4;left:14px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid rgba(67,151,176,.25);border-radius:4px;color:#8faebb;background:rgba(3,20,34,.74);font-size:9px;backdrop-filter:blur(8px)}.data-badge i{width:6px;height:6px;border-radius:50%;background:#5adcc8;box-shadow:0 0 8px #5adcc8}.data-badge.is-live i{background:#67f3b5;box-shadow:0 0 8px #67f3b5}
-.enso-map-panel>>>.enso-globe-stage{background:radial-gradient(ellipse at center,rgba(14,70,95,.16),transparent 60%),#061a2a}.enso-map-panel>>>.globe-controls{right:15px;bottom:17px}.enso-map-panel>>>.globe-control{width:32px;height:32px;border-radius:5px;background:rgba(4,22,37,.83)}.enso-map-panel>>>.globe-region-label{z-index:3}.enso-map-panel>>>.leaflet-container{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:#071a2a}.enso-map-panel>>>.leaflet-tile{filter:saturate(.66) brightness(.72) hue-rotate(8deg)}.enso-map-panel>>>.leaflet-control-attribution{display:none}
+.enso-map-panel>>>.enso-globe-stage{background:radial-gradient(ellipse at center,rgba(14,70,95,.16),transparent 60%),#061a2a}.enso-map-panel>>>.globe-controls{right:15px;bottom:17px}.enso-map-panel>>>.globe-control{width:32px;height:32px;border-radius:5px;background:rgba(4,22,37,.83)}.enso-map-panel>>>.globe-region-label{z-index:3}.enso-map-panel>>>.leaflet-container{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:#071a2a}.enso-map-panel>>>.enso-basemap-img{filter:saturate(.8) brightness(.85) contrast(1.05)}.enso-map-panel>>>.leaflet-control-attribution{display:none}
 .is-compact .map-toolbar{top:8px;gap:2px;padding:3px}.is-compact .map-toolbar-left{left:8px}.is-compact .map-toolbar-right{right:8px}.is-compact .map-toolbar button{min-height:25px;padding:0 6px;font-size:9px}.is-compact .map-toolbar button i{display:none}.is-compact .map-toolbar .maximize-button i{display:inline}.is-compact .sst-legend{right:9px;bottom:31px;padding:6px 8px}.is-compact .data-badge{left:8px;bottom:8px;padding:5px 7px;font-size:8px}
 .is-maximized{border-color:rgba(61,190,205,.45);border-radius:0}.is-maximized .map-toolbar{top:20px}.is-maximized .map-toolbar-left{left:22px}.is-maximized .map-toolbar-right{right:22px}.is-maximized .sst-legend{right:24px;bottom:45px}.is-maximized .data-badge{left:22px;bottom:20px}
 @media(max-width:700px){.enso-map-panel{min-height:280px}.map-toolbar{top:7px}.map-toolbar button{min-height:26px;padding:0 6px;font-size:9px}.map-toolbar-left{left:7px}.map-toolbar-right{right:7px}.map-toolbar .maximize-button span{display:none}.map-toolbar .maximize-button{padding:0 7px}.is-compact .map-toolbar-left{left:7px}.is-compact .map-toolbar-right{right:7px}.sst-legend{width:34%;right:7px;bottom:30px}}
