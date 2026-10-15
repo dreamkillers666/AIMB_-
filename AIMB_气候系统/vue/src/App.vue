@@ -1,8 +1,19 @@
 <template>
   <div id="app">
     <router-view/>
+    <!-- 全局 ENSO AI 助手：悬浮于所有页面之上，可拖动 -->
+    <enso-ai-assistant />
   </div>
 </template>
+
+<script>
+import EnsoAiAssistant from '@/components/EnsoAiAssistant.vue'
+
+export default {
+  name: 'App',
+  components: { EnsoAiAssistant }
+}
+</script>
 
 <style>
 /* --- 全局深色主题样式 --- */

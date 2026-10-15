@@ -27,6 +27,7 @@ public class InterceptorConfig implements WebMvcConfigurer {
                         "/ensodata/**",
                         "/enso/**",      // 你的预测接口路径
                         "/api/enso/**",
+                        "/ai-gateway/**", // ENSO AI 助手：同源转发到模型网关，无需登录
                         "/",
                         // --- 以下是必须新增的 Swagger 排除路径 ---
                         "/swagger-ui/**",

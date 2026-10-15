@@ -170,12 +170,13 @@
 
     <footer class="time-control">
       <div class="timeline-label"><span class="panel-kicker">ENSO SEASONAL TIMELINE</span><strong>演变时间轴</strong></div>
-      <button class="play-button" type="button" :aria-label="isPlaying ? '暂停演变' : '播放演变'" @click="togglePlayback"><i :class="isPlaying ? 'el-icon-video-pause' : 'el-icon-video-play'"></i></button>
+      <button class="play-button" type="button" :aria-label="isPlaying ? '暂停演变' : '播放演变'" @click="onPlayClick"><i :class="isPlaying ? 'el-icon-video-pause' : 'el-icon-video-play'"></i></button>
       <div class="timeline-track-wrap">
-        <div class="timeline-labels"><span v-for="period in timelineLabels" :key="period.index" :class="{ selected: period.index === currentIndexSafe }" @click="currentIndex = period.index">{{ period.label }}</span></div>
-        <input v-model.number="currentIndex" class="timeline-slider" type="range" min="0" :max="Math.max(activePeriods.length - 1, 0)" step="1" aria-label="选择 ENSO 历史月份" :style="{ '--progress': timelineProgress + '%' }">
+        <div class="timeline-labels"><span v-for="period in timelineLabels" :key="period.index" :class="{ selected: period.index === currentIndexSafe }" @click="selectTimelineIndex(period.index)">{{ period.label }}</span></div>
+        <input v-model.number="currentIndex" class="timeline-slider" type="range" min="0" :max="Math.max(activePeriods.length - 1, 0)" step="1" aria-label="选择 ENSO 历史月份" :style="{ '--progress': timelineProgress + '%' }" @change="onTimelineChange">
       </div>
       <div class="timeline-current"><span>当前时次</span><strong>{{ activePeriod }}</strong><small>{{ historyMode ? historyCurrentPointLabel : (currentIndex < 3 ? '观测场' : '预测场') }}</small></div>
+      <button type="button" class="timeline-ai-button" :class="{ ready: historyMode }" title="点击演变时间轴即唤起 AI 助手解读；也可由此按钮主动打开" @click="openAiBriefingFromTimeline('button')"><i class="el-icon-cpu"></i>AI 解读</button>
     </footer>
 
     <section class="module-workbench" aria-labelledby="moduleWorkbenchTitle">
@@ -206,6 +207,8 @@
 import * as echarts from 'echarts'
 import EnsoMapPanel from '@/components/EnsoMapPanel.vue'
 import { historyEvents, modelStartOptions, modelReplay, fieldForPoint } from '@/data/ensoHistory'
+import { openAiBriefing } from '@/utils/aiBus'
+import { getModelReports } from '@/data/ensoReports'
 
 export default {
   name: 'ForecastENSOScreen',
@@ -707,6 +710,77 @@ export default {
       // the historical view and keeps the query in sync.
       this.syncHistoryQuery()
     },
+    // ---- 演变时间轴 × AI 助手联动 ----
+    // 选中 ENSO 历史事件或 LSTA-Swin 历史预测后，只要操作演变时间轴
+    // （点标签 / 拖滑杆 / 播放），就唤起全局 AI 助手的报告解读弹窗。
+    onPlayClick() {
+      const wasPlaying = this.isPlaying
+      this.togglePlayback()
+      if (!wasPlaying && this.isPlaying) this.openAiBriefingFromTimeline('play')
+    },
+    selectTimelineIndex(index) {
+      this.currentIndex = index
+      this.openAiBriefingFromTimeline('label')
+    },
+    onTimelineChange() {
+      this.openAiBriefingFromTimeline('slider')
+    },
+    historyTimelineContext() {
+      return {
+        month: this.historyCurrentMonthLabel,
+        value: this.historyCurrentValue === null ? '—' : `${this.signedValue(this.historyCurrentValue)}`,
+        phase: this.historyPhase,
+        range: this.historyCurrentRange,
+        cursor: this.currentIndexSafe + 1,
+        total: this.historySeries.length,
+        hasData: this.historyHasData
+      }
+    },
+    openAiBriefingFromTimeline(trigger) {
+      if (!this.historyMode) {
+        this.$message({
+          type: 'info',
+          showClose: true,
+          duration: 3000,
+          message: '请先选择「ENSO 历史事件」或「LSTA-Swin 历史预测」，再点击演变时间轴查看 AI 解读'
+        })
+        return
+      }
+      const timeline = this.historyTimelineContext()
+      if (this.historyType === 'event') {
+        const item = this.historyActiveItem || {}
+        openAiBriefing({
+          kind: 'event',
+          trigger,
+          timeline,
+          event: {
+            id: item.id,
+            label: item.label,
+            type: item.type,
+            start: item.start,
+            end: item.end,
+            peak: item.peak,
+            phase: item.phase,
+            description: item.description,
+            source: item.source,
+            sourceUrl: item.sourceUrl,
+            hasData: item.hasData
+          }
+        })
+        return
+      }
+      const month = this.selectedHistoryModelStart
+      const reports = getModelReports(month)
+      openAiBriefing({
+        kind: 'model',
+        trigger,
+        month,
+        timeline,
+        available: reports.available,
+        impact: reports.impact,
+        validation: reports.validation
+      })
+    },
     syncHistoryQuery() {
       if (!this.$route || !this.$router) return
       const query = { ...(this.$route.query || {}), view: 'history' }
@@ -907,4 +981,12 @@ export default {
 @keyframes mapExpand{from{opacity:.88;transform:scale(.985)}to{opacity:1;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.map-card-maximized{animation:none}}
 .history-context-summary{display:flex;flex:0 1 220px;min-width:150px;flex-direction:column;align-items:flex-end;gap:2px;color:#d6edf2;font-size:9px;text-align:right}.history-context-summary span{color:#ffc77d;font-weight:600}.history-context-summary small,.history-context-summary b{color:#7898a7;font-size:8px;font-weight:400;white-space:nowrap}@media(max-width:620px){.history-context-summary{align-items:flex-start;flex-basis:100%;text-align:left}}
+/* ---- 演变时间轴上的 AI 解读入口 ---- */
+.timeline-ai-button{display:flex;align-items:center;gap:5px;flex:0 0 auto;padding:6px 10px;border:1px solid rgba(72,146,166,.34);border-radius:5px;color:#8fb6c0;background:rgba(13,52,66,.55);font-family:inherit;font-size:9px;letter-spacing:.4px;cursor:pointer;transition:color .18s,border-color .18s,background .18s}
+.timeline-ai-button i{font-size:11px}
+.timeline-ai-button:hover{color:#d9f8f5;border-color:rgba(67,205,216,.55);background:rgba(20,95,110,.5)}
+.timeline-ai-button.ready{color:#6fe0cd;border-color:rgba(75,224,193,.42);box-shadow:0 0 12px rgba(75,224,193,.14)}
+.timeline-ai-button.ready:hover{color:#e9fffb;background:rgba(22,110,104,.55)}
+@media(max-width:1200px){.timeline-ai-button{padding:5px 8px;font-size:8px}.timeline-ai-button i{font-size:10px}}
+@media(max-width:680px){.timeline-ai-button{padding:5px 7px}.timeline-ai-button i{font-size:10px}}
 </style>
