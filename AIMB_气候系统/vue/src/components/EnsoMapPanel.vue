@@ -43,6 +43,10 @@ import waterMaskUrl from '../assets/earth-water.png'
 if (!window.L) window.L = L
 require('leaflet-velocity')
 
+// 单一世界的 EPSG:4326：禁用经度 wrap，否则拖出 ±180 会被折回，
+// maxBounds 永远判定"在界内"，视图会滑进没有底图的世界副本区（黑块）
+const CRS4326NoWrap = Object.assign({}, L.CRS.EPSG4326, { wrapLng: null })
+
 // Reuse the hero's smoothed raster overlay implementation: bilinear sampling,
 // cached canvas rendering and low-cost panning between zoom events.
 const SstOverlayLayer = L.Layer.extend({
@@ -770,11 +774,13 @@ export default {
     initMap() {
       const el = this.$refs.mapEl
       if (!el || this.map) return
-      // EPSG:4326 等经纬度投影，与 NASA Blue Marble 底图（等经纬度贴图）严格对齐
+      // EPSG:4326 等经纬度投影，与 NASA Blue Marble 底图（等经纬度贴图）严格对齐。
+      // ImageOverlay 无法像瓦片一样平铺世界副本（CRS 会把 ±180 外经度折回），
+      // 因此禁用 worldCopyJump 并用硬边界把拖动限制在单一世界内
       this.map = L.map(el, {
         zoomControl: false, attributionControl: false, minZoom: 0, maxZoom: 4.5,
-        center: [8, 170], zoom: 0.75, zoomSnap: 0.25, worldCopyJump: true,
-        crs: L.CRS.EPSG4326,
+        center: [8, 170], zoom: 0.75, zoomSnap: 0.25, worldCopyJump: false,
+        crs: CRS4326NoWrap, maxBoundsViscosity: 1.0,
         fadeAnimation: true, bounceAtZoomLimits: false, dragging: true, tap: true,
         touchZoom: true, scrollWheelZoom: true, inertia: true
       })

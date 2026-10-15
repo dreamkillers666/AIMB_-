@@ -463,6 +463,20 @@ export default {
           const image = new Image();
           image.onload = () => {
             this._waterMaskImage = image;
+            // 一次性解码成灰度缓存：掩膜 4096×2048，逐帧 getImageData 代价过高
+            try {
+              const c = document.createElement('canvas');
+              c.width = image.width;
+              c.height = image.height;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(image, 0, 0);
+              const d = ctx.getImageData(0, 0, image.width, image.height).data;
+              const gray = new Uint8Array(image.width * image.height);
+              for (let i = 0; i < gray.length; i++) gray[i] = d[i * 4];
+              this._waterMaskGray = { w: image.width, h: image.height, data: gray };
+            } catch (e) {
+              this._waterMaskGray = null;
+            }
             resolve(image);
           };
           image.onerror = () => resolve(null);
@@ -488,7 +502,9 @@ export default {
       }
 
       const isSmallScreen = window.innerWidth < 768;
-      const width = isSmallScreen ? 1024 : 2048;
+      // 纹理宽度随数据网格分辨率自适应：1° 场用 2048，粗网格（如 5° 演示场）降到 1024，
+      // 时间轴逐帧重建纹理时明显更快，视觉无损
+      const width = Math.min(isSmallScreen ? 1024 : 2048, Math.max(512, sourceWidth * 14));
       const height = width / 2;
       const sstCanvas = document.createElement('canvas');
       sstCanvas.width = width;
@@ -496,21 +512,31 @@ export default {
       const sstContext = sstCanvas.getContext('2d');
       const sstImage = sstContext.createImageData(width, height);
 
-      // 陆地掩膜：白=海洋、黑=陆地。海温只画在海上，与陆地边界清晰
+      // 陆地掩膜：白=海洋、黑=陆地。海温只画在海上，与陆地边界清晰。
+      // 优先用加载时解码好的灰度缓存，避免每次重建纹理都全量 getImageData
       let maskData = null;
       let maskWidth = 0;
       let maskHeight = 0;
-      const maskImage = this._waterMaskImage;
-      if (maskImage && maskImage.width) {
-        maskWidth = maskImage.width;
-        maskHeight = maskImage.height;
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = maskWidth;
-        maskCanvas.height = maskHeight;
-        const maskContext = maskCanvas.getContext('2d');
-        maskContext.drawImage(maskImage, 0, 0);
-        maskData = maskContext.getImageData(0, 0, maskWidth, maskHeight).data;
+      const cachedMask = this._waterMaskGray;
+      if (cachedMask && cachedMask.w) {
+        maskWidth = cachedMask.w;
+        maskHeight = cachedMask.h;
+        maskData = cachedMask.data;
+      } else {
+        const maskImage = this._waterMaskImage;
+        if (maskImage && maskImage.width) {
+          maskWidth = maskImage.width;
+          maskHeight = maskImage.height;
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = maskWidth;
+          maskCanvas.height = maskHeight;
+          const maskContext = maskCanvas.getContext('2d');
+          maskContext.drawImage(maskImage, 0, 0);
+          maskData = maskContext.getImageData(0, 0, maskWidth, maskHeight).data;
+        }
       }
+      // 掩膜采样取 R 通道灰度：灰度缓存直接索引，Image 版本需 *4 取 R
+      const maskStride = cachedMask && cachedMask.w ? 1 : 4;
       // 掩膜灰度 -> 海洋系数：40~140 之间平滑过渡，海岸线柔和不生硬
       const oceanFactor = (gray) => {
         const t = Math.max(0, Math.min(1, (gray - 40) / (140 - 40)));
@@ -567,7 +593,7 @@ export default {
           if (maskData) {
             const maskX = Math.min(maskWidth - 1, Math.floor((((longitude / 360) + 0.5) % 1) * maskWidth));
             const maskY = Math.min(maskHeight - 1, Math.floor(((90 - latitude) / 180) * maskHeight));
-            maskFactor = oceanFactor(maskData[(maskY * maskWidth + maskX) * 4]);
+            maskFactor = oceanFactor(maskData[(maskY * maskWidth + maskX) * maskStride]);
             if (maskFactor <= 0.01) continue;
           }
           const color = this.sstColor(weighted / totalWeight);

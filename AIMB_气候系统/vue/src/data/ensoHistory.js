@@ -204,7 +204,9 @@ export const makeAnomalyField = (index, seed = 0) => {
     const latitude = 90 - yi * 5
     for (let xi = 0; xi < nx; xi += 1) {
       const longitude = xi * 5
-      if (isLikelyLand(longitude, latitude)) {
+      // 高纬度海洋不合成数据：真实 OISST 距平在高纬海冰区基本缺测，
+      // 强行铺值会在北冰洋/白令海形成与底图海冰冲突的块状马赛克
+      if (Math.abs(latitude) >= 66 || isLikelyLand(longitude, latitude)) {
         data.push(null)
         continue
       }
