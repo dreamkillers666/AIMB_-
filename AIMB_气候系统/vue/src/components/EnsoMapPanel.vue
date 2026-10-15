@@ -6,6 +6,7 @@
       :sst-data="sstData"
       :sst-mode="sstMode"
       :layer="currentLayer"
+      :region-suppressed="hasHistoryField"
       layout="center"
       @unavailable="handleGlobeUnavailable"
     />
@@ -42,10 +43,6 @@ import waterMaskUrl from '../assets/earth-water.png'
 
 if (!window.L) window.L = L
 require('leaflet-velocity')
-
-// 单一世界的 EPSG:4326：禁用经度 wrap，否则拖出 ±180 会被折回，
-// maxBounds 永远判定"在界内"，视图会滑进没有底图的世界副本区（黑块）
-const CRS4326NoWrap = Object.assign({}, L.CRS.EPSG4326, { wrapLng: null })
 
 // Reuse the hero's smoothed raster overlay implementation: bilinear sampling,
 // cached canvas rendering and low-cost panning between zoom events.
@@ -500,6 +497,10 @@ export default {
     colorGradient() {
       return SST_COLOR_GRADIENT
     },
+    // 回放/历史模式：隐藏 Niño3.4 指数参考区（2D 卡片与 3D 卡片行为一致）
+    hasHistoryField() {
+      return !!this.sstField
+    },
     windBadgeText() {
       if (this.windStatus.source === 'replay') return '历史风场 · 随月份变化'
       if (this.windStatus.source !== 'real') return '全球风场 · 海温监测'
@@ -512,6 +513,7 @@ export default {
       handler() {
         if (this.sstField) this.applyExternalSst()
         else this.clearExternalSst()
+        this.updateNinoRegionVisibility()
       }
     },
     sstMode() {
@@ -540,6 +542,8 @@ export default {
     }
     this.velocityLayer = null
     this.sstLayer = null
+    this.ninoRegionGroup = null
+    this.basemapLayers = null
   },
   methods: {
     applyLocalData() {
@@ -764,31 +768,60 @@ export default {
         this.$nextTick(() => {
           if (!this.map) this.initMap()
           else this.resizeMap()
+          this.updateNinoRegionVisibility()
           this.applyLayerVisibility()
         })
       } else if (this.velocityLayer && this.velocityLayer.pause) {
         this.velocityLayer.pause()
       }
     },
+    // 2D Niño3.4 参考区：实时模式显示，进入历史/回放（sstField 非空）自动隐藏
+    updateNinoRegionVisibility() {
+      if (!this.map || !this.ninoRegionGroup) return
+      const want = !this.hasHistoryField
+      if (want && !this.map.hasLayer(this.ninoRegionGroup)) this.ninoRegionGroup.addTo(this.map)
+      else if (!want && this.map.hasLayer(this.ninoRegionGroup)) this.map.removeLayer(this.ninoRegionGroup)
+    },
     handleGlobeUnavailable() { this.switchDisplayMode('2d') },
     initMap() {
       const el = this.$refs.mapEl
       if (!el || this.map) return
       // EPSG:4326 等经纬度投影，与 NASA Blue Marble 底图（等经纬度贴图）严格对齐。
-      // ImageOverlay 无法像瓦片一样平铺世界副本（CRS 会把 ±180 外经度折回），
-      // 因此禁用 worldCopyJump 并用硬边界把拖动限制在单一世界内
+      // 保留 CRS 默认经度环绕（wrapLng），配合 5 份底图世界副本：可以一直向左/向右
+      // 拖动不卡住、不出现黑块；拖出 ±180 后 Leaflet 会无缝把视图折回主世界
       this.map = L.map(el, {
         zoomControl: false, attributionControl: false, minZoom: 0, maxZoom: 4.5,
         center: [8, 170], zoom: 0.75, zoomSnap: 0.25, worldCopyJump: false,
-        crs: CRS4326NoWrap, maxBoundsViscosity: 1.0,
+        crs: L.CRS.EPSG4326, maxBoundsViscosity: 1.0,
         fadeAnimation: true, bounceAtZoomLimits: false, dragging: true, tap: true,
         touchZoom: true, scrollWheelZoom: true, inertia: true
       })
-      this.map.setMaxBounds(L.latLngBounds([-85, -180], [85, 180]))
-      // 本地高清底图（4096×2048），无外网依赖；海岸线由影像给出，与海温叠加风格统一
-      L.imageOverlay(blueMarbleUrl, L.latLngBounds([[-90, -180], [90, 180]]), {
-        interactive: false, className: 'enso-basemap-img'
-      }).addTo(this.map)
+      // 只限制纬度（经度交给环绕机制），避免把拖动卡死在单一世界内
+      this.map.setMaxBounds(L.latLngBounds([-89, -3600], [89, 3600]))
+      // 本地高清底图（4096×2048）× 5 份世界副本，覆盖 ±720° 经度，拖动永远有底图
+      this.basemapLayers = [-720, -360, 0, 360, 720].map((offset) => {
+        return L.imageOverlay(blueMarbleUrl, L.latLngBounds([[-90, -180 + offset], [90, 180 + offset]]), {
+          interactive: false, className: 'enso-basemap-img'
+        }).addTo(this.map)
+      })
+      // Niño3.4 指数参考区（5°N–5°S · 170°W–120°W）：黄色虚线框 + 紧凑卡片，跨世界副本
+      this.map.createPane('ninoPane')
+      const ninoPane = this.map.getPane('ninoPane')
+      ninoPane.style.zIndex = '450'
+      ninoPane.style.pointerEvents = 'none'
+      const ninoLayers = []
+      ;[-720, -360, 0, 360, 720].forEach((offset) => {
+        ninoLayers.push(L.rectangle([[-5, -170 + offset], [5, -120 + offset]], {
+          pane: 'ninoPane', interactive: false, fill: false,
+          color: '#ffd36a', weight: 1.2, dashArray: '5 4', opacity: 0.85
+        }))
+        ninoLayers.push(L.marker([0, -145 + offset], {
+          pane: 'ninoPane', interactive: false, keyboard: false,
+          icon: L.divIcon({ className: 'nino34-icon', html: '<div class="nino34-card"><span class="nino34-title">Niño3.4 指数参考区</span><small>5°N–5°S · 170°W–120°W</small></div>', iconSize: [0, 0] })
+        }))
+      })
+      this.ninoRegionGroup = L.layerGroup(ninoLayers)
+      this.updateNinoRegionVisibility()
       this.velocityLayer = L.velocityLayer({
         displayValues: false, displayOptions: { velocityType: '', emptyString: '' },
         maxVelocity: 26, minVelocity: 0, velocityScale: 0.03, particleAge: 90,
@@ -861,6 +894,7 @@ export default {
 .map-toolbar{position:absolute;z-index:5;top:12px;display:flex;gap:4px;padding:4px;border:1px solid rgba(64,164,192,.3);border-radius:7px;background:rgba(3,20,34,.76);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(9px)}.map-toolbar-left{left:12px}.map-toolbar-right{right:12px}.map-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:0 9px;border:1px solid transparent;border-radius:4px;color:#96b6c4;background:transparent;font:600 10px/1 inherit;cursor:pointer;transition:color .2s,border-color .2s,background .2s}.map-toolbar button:hover,.map-toolbar button.active{border-color:rgba(64,211,220,.34);color:#c7fbf6;background:rgba(17,110,128,.32)}.map-toolbar button:disabled{opacity:.36;cursor:not-allowed}.map-toolbar .maximize-button{margin-left:3px;padding:0 10px;border-left:1px solid rgba(105,162,182,.23);border-radius:0;color:#dcf8ff}.map-toolbar .maximize-button:hover{color:#fff;background:rgba(25,117,147,.34)}
 .sst-legend{position:absolute;z-index:4;right:15px;bottom:37px;width:min(250px,38%);padding:8px 10px;border:1px solid rgba(91,170,191,.28);border-radius:5px;background:rgba(3,20,34,.76);backdrop-filter:blur(8px)}.sst-legend-bar{height:7px;border-radius:5px}.sst-legend-labels{display:flex;justify-content:space-between;margin-top:5px;color:#a8c2cd;font-size:9px;font-variant-numeric:tabular-nums}.data-badge{position:absolute;z-index:4;left:14px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid rgba(67,151,176,.25);border-radius:4px;color:#8faebb;background:rgba(3,20,34,.74);font-size:9px;backdrop-filter:blur(8px)}.data-badge i{width:6px;height:6px;border-radius:50%;background:#5adcc8;box-shadow:0 0 8px #5adcc8}.data-badge.is-live i{background:#67f3b5;box-shadow:0 0 8px #67f3b5}
 .enso-map-panel>>>.enso-globe-stage{background:radial-gradient(ellipse at center,rgba(14,70,95,.16),transparent 60%),#061a2a}.enso-map-panel>>>.globe-controls{right:15px;bottom:17px}.enso-map-panel>>>.globe-control{width:32px;height:32px;border-radius:5px;background:rgba(4,22,37,.83)}.enso-map-panel>>>.globe-region-label{z-index:3}.enso-map-panel>>>.leaflet-container{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:#071a2a}.enso-map-panel>>>.enso-basemap-img{filter:saturate(.8) brightness(.85) contrast(1.05)}.enso-map-panel>>>.leaflet-control-attribution{display:none}
+.enso-map-panel>>>.nino34-icon{width:0;height:0}.enso-map-panel>>>.nino34-card{position:absolute;left:10px;top:0;transform:translateY(-50%);display:flex;flex-direction:column;gap:1px;padding:5px 8px 6px;border:1px solid rgba(255,214,130,.82);border-left:3px solid #ffd36a;background:rgba(6,20,29,.92);box-shadow:0 6px 18px rgba(0,0,0,.44);white-space:nowrap}.enso-map-panel>>>.nino34-title{color:#fff4d1;font-size:11px;line-height:1.25;font-weight:600}.enso-map-panel>>>.nino34-card small{color:#afc5cb;font-size:9px;line-height:1.3}
 .is-compact .map-toolbar{top:8px;gap:2px;padding:3px}.is-compact .map-toolbar-left{left:8px}.is-compact .map-toolbar-right{right:8px}.is-compact .map-toolbar button{min-height:25px;padding:0 6px;font-size:9px}.is-compact .map-toolbar button i{display:none}.is-compact .map-toolbar .maximize-button i{display:inline}.is-compact .sst-legend{right:9px;bottom:31px;padding:6px 8px}.is-compact .data-badge{left:8px;bottom:8px;padding:5px 7px;font-size:8px}
 .is-maximized{border-color:rgba(61,190,205,.45);border-radius:0}.is-maximized .map-toolbar{top:20px}.is-maximized .map-toolbar-left{left:22px}.is-maximized .map-toolbar-right{right:22px}.is-maximized .sst-legend{right:24px;bottom:45px}.is-maximized .data-badge{left:22px;bottom:20px}
 @media(max-width:700px){.enso-map-panel{min-height:280px}.map-toolbar{top:7px}.map-toolbar button{min-height:26px;padding:0 6px;font-size:9px}.map-toolbar-left{left:7px}.map-toolbar-right{right:7px}.map-toolbar .maximize-button span{display:none}.map-toolbar .maximize-button{padding:0 7px}.is-compact .map-toolbar-left{left:7px}.is-compact .map-toolbar-right{right:7px}.sst-legend{width:34%;right:7px;bottom:30px}}

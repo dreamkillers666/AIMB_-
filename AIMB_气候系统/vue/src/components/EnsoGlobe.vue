@@ -82,10 +82,17 @@ export default {
     sstData: { type: Object, default: null },
     sstMode: { type: String, default: 'absolute' },
     layer: { type: String, default: 'wind' },
-    layout: { type: String, default: 'showcase' }
+    layout: { type: String, default: 'showcase' },
+    // 回放/历史模式下由父组件置 true：自动隐藏 Niño3.4 参考区（卡片 + 球面标注）
+    regionSuppressed: { type: Boolean, default: false }
   },
   data() {
     return { rendererError: '', regionVisible: true };
+  },
+  computed: {
+    regionShown() {
+      return this.regionVisible && !this.regionSuppressed;
+    }
   },
   watch: {
     windData() {
@@ -102,6 +109,9 @@ export default {
     },
     layout() {
       this.resizeScene();
+    },
+    regionSuppressed() {
+      this.applyRegionVisibility();
     }
   },
   mounted() {
@@ -289,6 +299,7 @@ export default {
         this.refreshSurfaceTextures();
         this.refreshWind();
         this.applyLayer();
+        this.applyRegionVisibility();
         this.renderFrame(performance.now());
       } catch (error) {
         this.rendererError = error && error.message ? error.message : 'WebGL unavailable';
@@ -751,11 +762,18 @@ export default {
 
     toggleReferenceArea() {
       this.regionVisible = !this.regionVisible;
+      this.applyRegionVisibility();
+    },
+
+    // 同步 Niño3.4 参考区的可见性（手动开关 && 回放抑制 共同决定）
+    applyRegionVisibility() {
       const state = this._three;
-      if (!state) return;
-      [state.ninoArea, state.ninoBox, state.ninoMarker].forEach((object) => {
-        object.visible = this.regionVisible;
-      });
+      const shown = this.regionShown;
+      if (state) {
+        [state.ninoArea, state.ninoBox, state.ninoMarker].forEach((object) => {
+          if (object) object.visible = shown;
+        });
+      }
       this.updateRegionLabel();
     },
 
@@ -861,7 +879,7 @@ export default {
       const state = this._three;
       const label = this.$refs.ninoLabel;
       if (!state || !label) return;
-      if (!this.regionVisible) {
+      if (!this.regionShown) {
         label.style.visibility = 'hidden';
         label.style.opacity = '0';
         return;
@@ -886,7 +904,7 @@ export default {
       const y = Math.max(label.offsetHeight / 2 + 10, Math.min(stage.clientHeight - label.offsetHeight / 2 - 10, rawY));
       label.style.left = `${Math.max(10, Math.min(stage.clientWidth - 10, x))}px`;
       label.style.top = `${y}px`;
-      const placeLeft = x > stage.clientWidth - 255;
+      const placeLeft = x > stage.clientWidth - 195;
       label.classList.toggle('is-left', placeLeft);
       label.style.transform = placeLeft
         ? 'translate(calc(-100% - 20px), -50%)'
@@ -1063,15 +1081,15 @@ export default {
   position: absolute;
   z-index: 2;
   display: flex;
-  min-width: 216px;
-  max-width: 246px;
+  min-width: 132px;
+  max-width: 168px;
   flex-direction: column;
-  gap: 3px;
-  padding: 11px 14px 12px;
+  gap: 1px;
+  padding: 6px 9px 7px;
   border: 1px solid rgba(255, 214, 130, 0.82);
-  border-left: 4px solid #ffd36a;
-  background: rgba(6, 20, 29, 0.94);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
+  border-left: 3px solid #ffd36a;
+  background: rgba(6, 20, 29, 0.92);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.44);
   color: #f2f6f2;
   pointer-events: none;
   visibility: hidden;
@@ -1082,42 +1100,43 @@ export default {
 .globe-region-label::before {
   position: absolute;
   top: 50%;
-  left: -17px;
-  width: 14px;
+  left: -13px;
+  width: 10px;
   border-top: 1px solid rgba(255, 214, 130, 0.9);
   content: '';
 }
 
 .globe-region-label.is-left {
-  border-right: 4px solid #ffd36a;
+  border-right: 3px solid #ffd36a;
   border-left: 1px solid rgba(255, 214, 130, 0.82);
 }
 
 .globe-region-label.is-left::before {
-  right: -17px;
+  right: -13px;
   left: auto;
 }
 
 .globe-region-kicker {
   color: #ffd36a;
-  font-size: 11px;
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
   line-height: 1.2;
 }
 
 .globe-region-label strong {
   color: #fff4d1;
-  font-size: 17px;
+  font-size: 12.5px;
   line-height: 1.25;
 }
 
 .globe-region-label > span:not(.globe-region-kicker) {
   color: #d1e0e1;
-  font-size: 13px;
+  font-size: 10px;
 }
 
 .globe-region-label small {
   color: #afc5cb;
-  font-size: 11px;
+  font-size: 9px;
   line-height: 1.3;
 }
 
@@ -1137,8 +1156,8 @@ export default {
   }
 
   .globe-region-label {
-    min-width: 194px;
-    max-width: min(226px, calc(100vw - 32px));
+    min-width: 118px;
+    max-width: min(152px, calc(100vw - 32px));
   }
 }
 </style>
