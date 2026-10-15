@@ -13,6 +13,74 @@
     <div v-show="displayMode === '2d'" ref="mapEl" class="map-2d"></div>
     <div class="map-vignette"></div>
 
+    <!-- A11 · HUD 装饰层：四角取景框 + 缓慢下移的扫描光带 -->
+    <div class="map-hud" aria-hidden="true">
+      <span class="hud-corner hud-tl"></span>
+      <span class="hud-corner hud-tr"></span>
+      <span class="hud-corner hud-bl"></span>
+      <span class="hud-corner hud-br"></span>
+      <span class="hud-scanline"></span>
+    </div>
+
+    <!-- A1 · 十字探针：跟随鼠标的经纬十字线与实时格点读数 -->
+    <div v-if="displayMode === '2d' && probe.visible" class="map-crosshair" aria-hidden="true">
+      <span class="crosshair-line crosshair-x" :style="{ top: probe.y + 'px' }"></span>
+      <span class="crosshair-line crosshair-y" :style="{ left: probe.x + 'px' }"></span>
+    </div>
+    <div
+      v-if="displayMode === '2d' && probe.visible"
+      class="map-probe"
+      :class="{ flipped: probe.flip }"
+      :style="{ left: probe.x + 'px', top: probe.y + 'px' }"
+    >
+      <div class="probe-head">
+        <span class="probe-coord">{{ probe.coord }}</span>
+        <span class="probe-mode">{{ sstMode === 'anomaly' ? '距平场' : '绝对场' }}</span>
+      </div>
+      <div class="probe-grid">
+        <span>{{ sstMode === 'anomaly' ? 'SSTA' : 'SST' }}</span>
+        <strong :class="probeValueClass">{{ probe.sstText }}</strong>
+        <span>风速</span>
+        <strong>{{ probe.windText }}</strong>
+        <span>风向</span>
+        <strong>{{ probe.dirText }}</strong>
+      </div>
+    </div>
+
+    <!-- A2 · 点位时序探针：点击落钉，随回放累积该点曲线 -->
+    <div v-if="displayMode === '2d' && pins.length" class="probe-pins" aria-label="点位时序探针">
+      <div class="probe-pins-head">
+        <span><i></i>点位时序探针</span>
+        <button type="button" @click="clearPins">清除</button>
+      </div>
+      <ul>
+        <li v-for="pin in pins" :key="pin.id">
+          <span class="pin-index">{{ pin.index }}</span>
+          <div class="pin-body">
+            <div class="pin-meta">
+              <b>{{ pin.coord }}</b>
+              <em :class="pinValueClass(pin)">{{ pin.currentText }}</em>
+            </div>
+            <svg class="pin-spark" viewBox="0 0 120 30" preserveAspectRatio="none">
+              <path class="pin-zero" d="M0 15 H120"></path>
+              <path class="pin-line" :d="pin.path"></path>
+            </svg>
+            <small>{{ pin.series.length }} 帧 · {{ pin.range }}</small>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- A14 · 内嵌回放控制条：与页面底部时间轴同源，播放控制上移到地图内 -->
+    <div v-if="replayPeriods.length > 1" class="map-replay" role="group" aria-label="地图回放控制">
+      <button type="button" aria-label="上一帧" @click="$emit('replay-step', -1)"><i class="el-icon-arrow-left"></i></button>
+      <button type="button" class="replay-main" :aria-label="replayPlaying ? '暂停演变' : '播放演变'" @click="$emit('replay-toggle')"><i :class="replayPlaying ? 'el-icon-video-pause' : 'el-icon-video-play'"></i></button>
+      <button type="button" aria-label="下一帧" @click="$emit('replay-step', 1)"><i class="el-icon-arrow-right"></i></button>
+      <div class="replay-progress"><i :style="{ width: replayProgress + '%' }"></i></div>
+      <span class="replay-readout">{{ replayPeriods[replayIndex] || '—' }} · {{ replayIndex + 1 }}/{{ replayPeriods.length }}</span>
+      <button type="button" class="replay-speed" @click="cycleSpeed">{{ speedLabel }}</button>
+    </div>
+
     <div class="map-toolbar map-toolbar-left" role="tablist" aria-label="地图显示模式">
       <button type="button" role="tab" :aria-selected="displayMode === '3d'" :class="{ active: displayMode === '3d' }" @click="switchDisplayMode('3d')">3D 地球</button>
       <button type="button" role="tab" :aria-selected="displayMode === '2d'" :class="{ active: displayMode === '2d' }" @click="switchDisplayMode('2d')">2D 地图</button>
@@ -26,7 +94,7 @@
     </div>
 
     <div v-if="(currentLayer === 'sst' || currentLayer === 'both') && hasSst" class="sst-legend" :aria-label="sstMode === 'anomaly' ? '海温距平图例' : '海表温度图例'">
-      <div class="sst-legend-bar" :style="{ background: colorGradient }"></div><div class="sst-legend-labels"><span>{{ sstMode === 'anomaly' ? '−3' : '−2' }}</span><span>{{ sstMode === 'anomaly' ? '−1.5' : '8' }}</span><span>0</span><span>{{ sstMode === 'anomaly' ? '+1.5' : '24' }}</span><span>{{ sstMode === 'anomaly' ? '+3 ℃' : '32°C' }}</span></div>
+      <div class="sst-legend-bar" :style="{ background: colorGradient }"></div><div class="sst-legend-labels"><span>{{ sstMode === 'anomaly' ? '−3' : '−2' }}</span><span>{{ sstMode === 'anomaly' ? '−1.5' : '7' }}</span><span>{{ sstMode === 'anomaly' ? '0' : '15' }}</span><span>{{ sstMode === 'anomaly' ? '+1.5' : '24' }}</span><span>{{ sstMode === 'anomaly' ? '+3 ℃' : '32°C' }}</span></div>
     </div>
     <div class="data-badge" :class="{ 'is-live': windStatus.source === 'real' }"><i></i>{{ windBadgeText }}</div>
   </section>
@@ -43,6 +111,10 @@ import waterMaskUrl from '../assets/earth-water.png'
 
 if (!window.L) window.L = L
 require('leaflet-velocity')
+
+// A2 · 钉子位置跨地图实例保留：切换实时/历史模式时 EnsoMapPanel 会因 :key
+// 变化而重建，这里用模块级缓存把钉子位置带回去（时序曲线重新累积）
+let pinLocationCache = []
 
 // Reuse the hero's smoothed raster overlay implementation: bilinear sampling,
 // cached canvas rendering and low-cost panning between zoom events.
@@ -474,7 +546,13 @@ export default {
     maximized: { type: Boolean, default: false },
     sstField: { type: Object, default: null },
     sstMode: { type: String, default: 'absolute' },
-    initialLayer: { type: String, default: 'both' }
+    initialLayer: { type: String, default: 'both' },
+    // A14 · 内嵌回放条的数据源（页面级时间轴），播放状态由父组件驱动
+    replayPeriods: { type: Array, default: () => [] },
+    replayIndex: { type: Number, default: 0 },
+    replayPlaying: { type: Boolean, default: false },
+    // 回放身份（事件 id / 起报月份）：变化时点位曲线归零，避免跨事件混叠
+    replayKey: { type: String, default: '' }
   },
   data() {
     return {
@@ -490,7 +568,16 @@ export default {
       pollTimer: null,
       destroyed: false,
       fetchController: null,
-      externalSstActive: false
+      externalSstActive: false,
+      // A1 · 探针读数
+      probe: { visible: false, x: 0, y: 0, flip: false, coord: '—', sstText: '—', windText: '—', dirText: '—' },
+      // A2 · 点位时序探针
+      pins: [],
+      pinSeq: 0,
+      pinDownAt: null,
+      // A14 · 倍速循环
+      speeds: [900, 450, 1600],
+      speedIndex: 0
     }
   },
   computed: {
@@ -505,6 +592,22 @@ export default {
       if (this.windStatus.source === 'replay') return '历史风场 · 随月份变化'
       if (this.windStatus.source !== 'real') return '全球风场 · 海温监测'
       return 'GFS 分析场 · ' + (this.windStatus.refTime || '最新时次')
+    },
+    probeValueClass() {
+      const anomaly = this.sstMode === 'anomaly'
+      return { 'is-warm': !anomaly, 'warm-text': anomaly && this.probe.sstText.indexOf('+') === 0, 'cool-text': anomaly && this.probe.sstText.indexOf('−') === 0 }
+    },
+    // A14
+    replayProgress() {
+      const total = this.replayPeriods.length
+      if (total < 2) return 0
+      return (Math.min(Math.max(this.replayIndex, 0), total - 1) / (total - 1)) * 100
+    },
+    speedLabel() {
+      const ms = this.speeds[this.speedIndex]
+      if (ms <= 500) return '2×'
+      if (ms >= 1600) return '0.5×'
+      return '1×'
     }
   },
   watch: {
@@ -514,15 +617,27 @@ export default {
         if (this.sstField) this.applyExternalSst()
         else this.clearExternalSst()
         this.updateNinoRegionVisibility()
+        this.refreshPinSeries()
       }
     },
     sstMode() {
       if (this.sstLayer) this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
       if (this.sstField && this.sstMode === 'anomaly') this.applyReplayWind()
       if (!this.sstField) this.clearExternalSst()
+      this.pins.forEach((pin) => { pin.series = [] })
     },
     maximized() {
       this.$nextTick(() => this.resizeMap())
+    },
+    // 切换历史事件 / 起报月份：点位时序从新事件重新累积
+    replayKey() {
+      this.pins.forEach((pin) => {
+        pin.series = []
+        pin.path = ''
+        pin.range = '—'
+        pin.currentText = '—'
+      })
+      this.refreshPinSeries()
     }
   },
   mounted() {
@@ -533,6 +648,7 @@ export default {
   },
   beforeDestroy() {
     this.destroyed = true
+    pinLocationCache = this.pins.map(pin => ({ lat: pin.lat, lon: pin.lon }))
     if (this.pollTimer) window.clearInterval(this.pollTimer)
     if (this.fetchController) this.fetchController.abort()
     if (this.map) {
@@ -755,6 +871,7 @@ export default {
       if (this.sstLayer) this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
       if (this.displayMode === '3d' && this.velocityLayer && this.velocityLayer.pause) this.velocityLayer.pause()
       if (!this.hasSst && this.currentLayer !== 'wind') this.switchLayer('wind')
+      this.refreshPinSeries()
     },
     formatTime(value) {
       if (!value) return '最新时次'
@@ -837,6 +954,22 @@ export default {
       if (this.velocityLayer._canvasLayer && this.velocityLayer._canvasLayer._canvas) this.velocityLayer._canvasLayer._canvas.style.zIndex = '2'
       this.map.on('dragstart', () => this.velocityLayer && this.velocityLayer.pause())
       this.map.on('dragend', () => this.velocityLayer && this.velocityLayer.resume())
+      // A1 · 探针：拖拽中持续刷新读数，离开地图即隐藏
+      this.map.on('mousemove', this.handleProbeMove, this)
+      this.map.on('mouseout', this.handleProbeLeave, this)
+      // A2 · 落钉：用按下/弹起位移区分"点击"与"拖动"，避免拖地图误打钉
+      this.map.on('mousedown', (event) => {
+        this.pinDownAt = event.originalEvent ? { x: event.originalEvent.clientX, y: event.originalEvent.clientY } : null
+      })
+      this.map.on('mouseup', (event) => {
+        const origin = this.pinDownAt
+        this.pinDownAt = null
+        if (!origin || !event.originalEvent || this.displayMode !== '2d') return
+        const moved = Math.abs(event.originalEvent.clientX - origin.x) + Math.abs(event.originalEvent.clientY - origin.y)
+        if (moved > 5) return
+        const latLng = this.map.mouseEventToLatLng(event.originalEvent)
+        this.togglePin(latLng.lat, latLng.lng)
+      })
       this.map.on('mousedown', e => {
         if (e.originalEvent && e.originalEvent.button === 1) {
           e.originalEvent.preventDefault()
@@ -845,6 +978,7 @@ export default {
       })
       this.applyLayerVisibility()
       this.resizeMap()
+      this.restoreCachedPins()
     },
     resizeMap() {
       if (this.map && this.displayMode === '2d') {
@@ -883,6 +1017,186 @@ export default {
       const canvas = this.velocityLayer && this.velocityLayer._canvasLayer && this.velocityLayer._canvasLayer._canvas
       if (canvas) canvas.style.display = ''
       if (this.velocityLayer && this.velocityLayer.resume) this.velocityLayer.resume()
+    },
+
+    // ---- A1 · 十字探针 ----
+    // 与 SstOverlayLayer 的双线性采样保持一致：经度环绕、纬度截断、缺测邻居加权
+    sampleGrid(grid, longitude, latitude) {
+      if (!grid || !grid.header || !Array.isArray(grid.data)) return null
+      const header = grid.header
+      const nx = Number(header.nx)
+      const ny = Number(header.ny)
+      const dx = Number(header.dx)
+      const dy = Number(header.dy)
+      const lo1 = Number(header.lo1)
+      const la1 = Number(header.la1)
+      if (![nx, ny, dx, dy, lo1, la1].every(Number.isFinite) || nx < 2 || ny < 2) return null
+      const stepY = Math.abs(dy) || 1
+      let x = (((longitude - lo1) / dx) % nx + nx) % nx
+      const y = Math.max(0, Math.min(ny - 1.001, (la1 - latitude) / stepY))
+      const x0 = Math.floor(x)
+      const y0 = Math.floor(y)
+      const x1 = (x0 + 1) % nx
+      const y1 = Math.min(ny - 1, y0 + 1)
+      const fx = x - x0
+      const fy = y - y0
+      const pick = (i, j) => {
+        const value = grid.data[j * nx + i]
+        return Number.isFinite(value) ? value : null
+      }
+      const corners = [[pick(x0, y0), (1 - fx) * (1 - fy)], [pick(x1, y0), fx * (1 - fy)], [pick(x0, y1), (1 - fx) * fy], [pick(x1, y1), fx * fy]]
+      let weighted = 0
+      let weight = 0
+      corners.forEach(([value, factor]) => {
+        if (value !== null) {
+          weighted += value * factor
+          weight += factor
+        }
+      })
+      return weight > 0 ? weighted / weight : null
+    },
+    windLabel(degree) {
+      const directions = ['北', '东北', '东', '东南', '南', '西南', '西', '西北']
+      return directions[Math.round(((degree % 360) + 360) % 360 / 45) % 8] + '风'
+    },
+    sampleWindAt(longitude, latitude) {
+      if (!Array.isArray(this.windData) || this.windData.length < 2) return null
+      const u = this.sampleGrid(this.windData[0], longitude, latitude)
+      const v = this.sampleGrid(this.windData[1], longitude, latitude)
+      if (u === null || v === null) return null
+      const speed = Math.sqrt(u * u + v * v)
+      // 气象风向指风的来向：由 (u, v) 求指向源点的方位角
+      const degree = ((Math.atan2(-u, -v) * 180 / Math.PI) + 360) % 360
+      return { speed, degree, label: this.windLabel(degree) }
+    },
+    handleProbeMove(event) {
+      if (!this.map || this.displayMode !== '2d') return
+      const container = event.containerPoint
+      const latLng = event.latlng
+      if (!container || !latLng) return
+      const longitude = (((latLng.lng + 180) % 360) + 360) % 360 - 180
+      const latitude = Math.max(-89.5, Math.min(89.5, latLng.lat))
+      const sst = this.sampleGrid(this.sstData, longitude, latitude)
+      const wind = this.sampleWindAt(longitude, latitude)
+      const anomaly = this.sstMode === 'anomaly'
+      this.probe.x = container.x
+      this.probe.y = container.y
+      this.probe.flip = container.x > (this.$refs.mapEl ? this.$refs.mapEl.clientWidth * 0.6 : 480)
+      this.probe.coord = `${Math.abs(latitude).toFixed(1)}°${latitude >= 0 ? 'N' : 'S'} · ${Math.abs(longitude).toFixed(1)}°${longitude >= 0 ? 'E' : 'W'}`
+      this.probe.sstText = sst === null
+        ? '缺测'
+        : anomaly
+          ? `${sst > 0 ? '+' : sst < 0 ? '−' : ''}${Math.abs(sst).toFixed(2)}℃`
+          : `${sst.toFixed(1)}℃`
+      this.probe.windText = wind ? `${wind.speed.toFixed(1)} m/s` : '—'
+      this.probe.dirText = wind ? `${wind.label} ${wind.degree.toFixed(0)}°` : '—'
+      this.probe.visible = true
+    },
+    handleProbeLeave() {
+      this.probe.visible = false
+    },
+
+    // ---- A2 · 点位时序探针 ----
+    pinValueClass(pin) {
+      if (this.sstMode !== 'anomaly') return {}
+      return { 'warm-text': pin.currentText.indexOf('+') === 0, 'cool-text': pin.currentText.indexOf('−') === 0 }
+    },
+    togglePin(latitude, longitude) {
+      const lon = (((longitude + 180) % 360) + 360) % 360 - 180
+      const lat = Math.max(-89, Math.min(89, latitude))
+      const existing = this.pins.find(pin => Math.abs(pin.lat - lat) < 1.2 && Math.abs(pin.lon - lon) < 1.2)
+      if (existing) {
+        this.removePin(existing)
+        return
+      }
+      this.createPin(lat, lon)
+    },
+    createPin(latitude, longitude) {
+      if (this.pins.length >= 4) this.removePin(this.pins[0])
+      this.pinSeq += 1
+      const offsets = [-720, -360, 0, 360, 720]
+      const markers = offsets.map(offset => L.circleMarker([latitude, longitude + offset], {
+        radius: 5, weight: 1.6, color: '#ffd694', fillColor: 'rgba(255, 214, 148, .85)', fillOpacity: .95, interactive: false
+      }))
+      const pin = {
+        id: `pin-${this.pinSeq}`,
+        index: this.pinSeq,
+        lat: latitude,
+        lon: longitude,
+        markers,
+        coord: `${Math.abs(latitude).toFixed(1)}°${latitude >= 0 ? 'N' : 'S'} · ${Math.abs(longitude).toFixed(1)}°${longitude >= 0 ? 'E' : 'W'}`,
+        series: [],
+        currentText: '—',
+        path: '',
+        range: '—'
+      }
+      this.pins.push(pin)
+      if (this.map) markers.forEach(marker => marker.addTo(this.map))
+      this.refreshPinSeries()
+      return pin
+    },
+    // 地图重建后按缓存位置恢复钉子（曲线从当前事件重新累积）
+    restoreCachedPins() {
+      if (!pinLocationCache.length || this.pins.length) return
+      const cached = pinLocationCache.slice()
+      pinLocationCache = []
+      cached.forEach(item => this.createPin(item.lat, item.lon))
+    },
+    removePin(pin) {
+      if (this.map) pin.markers.forEach(marker => this.map.removeLayer(marker))
+      this.pins = this.pins.filter(item => item !== pin)
+    },
+    clearPins() {
+      this.pins.slice().forEach(pin => this.removePin(pin))
+    },
+    refreshPinSeries() {
+      if (!this.pins.length) return
+      const anomaly = this.sstMode === 'anomaly'
+      const header = this.sstField && this.sstField.header ? this.sstField.header : null
+      const refTime = header && header.refTime ? String(header.refTime) : '当前场'
+      // 帧号唯一：refTime 在回放里是固定串（historical-demo），必须叠加帧号
+      const frame = header && header.forecastTime != null ? Number(header.forecastTime) : this.replayIndex
+      const label = `${refTime}·#${frame}`
+      this.pins.forEach((pin) => {
+        const value = this.sampleGrid(this.sstData, pin.lon, pin.lat)
+        if (value === null) {
+          pin.currentText = '缺测'
+          return
+        }
+        pin.currentText = anomaly
+          ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(2)}℃`
+          : `${value.toFixed(1)}℃`
+        const hit = pin.series.findIndex(item => item.label === label)
+        if (hit >= 0) pin.series[hit].value = value
+        else {
+          pin.series.push({ label, value })
+          if (pin.series.length > 40) pin.series.shift()
+        }
+        pin.path = this.sparkPath(pin.series)
+        const values = pin.series.map(item => item.value)
+        pin.range = `${Math.min(...values).toFixed(1)} ~ ${Math.max(...values).toFixed(1)}℃`
+      })
+    },
+    sparkPath(series) {
+      if (!series || series.length < 2) return ''
+      const width = 120
+      const height = 30
+      const pad = 3
+      const values = series.map(item => item.value)
+      const min = Math.min(...values)
+      const max = Math.max(...values)
+      const span = (max - min) || 1
+      return series.map((item, index) => {
+        const x = pad + (index / (series.length - 1)) * (width - pad * 2)
+        const y = height - pad - ((item.value - min) / span) * (height - pad * 2)
+        return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
+      }).join(' ')
+    },
+
+    // ---- A14 · 内嵌回放 ----
+    cycleSpeed() {
+      this.speedIndex = (this.speedIndex + 1) % this.speeds.length
+      this.$emit('replay-speed', this.speeds[this.speedIndex])
     }
   }
 }
@@ -898,4 +1212,65 @@ export default {
 .is-compact .map-toolbar{top:8px;gap:2px;padding:3px}.is-compact .map-toolbar-left{left:8px}.is-compact .map-toolbar-right{right:8px}.is-compact .map-toolbar button{min-height:25px;padding:0 6px;font-size:9px}.is-compact .map-toolbar button i{display:none}.is-compact .map-toolbar .maximize-button i{display:inline}.is-compact .sst-legend{right:9px;bottom:31px;padding:6px 8px}.is-compact .data-badge{left:8px;bottom:8px;padding:5px 7px;font-size:8px}
 .is-maximized{border-color:rgba(61,190,205,.45);border-radius:0}.is-maximized .map-toolbar{top:20px}.is-maximized .map-toolbar-left{left:22px}.is-maximized .map-toolbar-right{right:22px}.is-maximized .sst-legend{right:24px;bottom:45px}.is-maximized .data-badge{left:22px;bottom:20px}
 @media(max-width:700px){.enso-map-panel{min-height:280px}.map-toolbar{top:7px}.map-toolbar button{min-height:26px;padding:0 6px;font-size:9px}.map-toolbar-left{left:7px}.map-toolbar-right{right:7px}.map-toolbar .maximize-button span{display:none}.map-toolbar .maximize-button{padding:0 7px}.is-compact .map-toolbar-left{left:7px}.is-compact .map-toolbar-right{right:7px}.sst-legend{width:34%;right:7px;bottom:30px}}
+
+/* ---- A11 · HUD 取景框 / 扫描光带 ---- */
+.map-hud{position:absolute;inset:0;z-index:3;pointer-events:none}
+.hud-corner{position:absolute;width:20px;height:20px;border:1px solid rgba(94,224,226,.42)}
+.hud-tl{top:8px;left:8px;border-right:0;border-bottom:0}
+.hud-tr{top:8px;right:8px;border-bottom:0;border-left:0}
+.hud-bl{bottom:8px;left:8px;border-top:0;border-right:0}
+.hud-br{bottom:8px;right:8px;border-top:0;border-left:0}
+.hud-scanline{position:absolute;left:0;right:0;height:22%;background:linear-gradient(180deg,transparent,rgba(86,226,230,.06),transparent);animation:hudScan 7s linear infinite}
+@keyframes hudScan{0%{top:-24%}100%{top:102%}}
+
+/* ---- A1 · 十字探针 ---- */
+.map-crosshair{position:absolute;inset:0;z-index:4;pointer-events:none}
+.crosshair-line{position:absolute;background:rgba(126,240,240,.26)}
+.crosshair-x{left:0;right:0;height:1px}
+.crosshair-y{top:0;bottom:0;width:1px}
+.map-probe{position:absolute;z-index:6;min-width:152px;margin:15px 0 0 15px;padding:7px 9px;border:1px solid rgba(96,214,226,.4);border-radius:5px;background:rgba(4,22,36,.93);box-shadow:0 8px 22px rgba(0,0,0,.42);backdrop-filter:blur(8px);pointer-events:none}
+.map-probe.flipped{margin-left:0;margin-right:15px;transform:translateX(-100%)}
+.probe-head{display:flex;justify-content:space-between;gap:10px;padding-bottom:5px;border-bottom:1px solid rgba(84,168,190,.22);color:#8fd7e0;font-size:9px;font-variant-numeric:tabular-nums}
+.probe-mode{color:#6f96a6;font-size:8px}
+.probe-grid{display:grid;grid-template-columns:auto auto;gap:4px 12px;margin-top:6px;font-size:9px}
+.probe-grid span{color:#7e9dad}
+.probe-grid strong{color:#e6fbff;font-weight:500;font-variant-numeric:tabular-nums}
+.probe-grid .warm-text{color:#ffb875}
+.probe-grid .cool-text{color:#79c8f5}
+
+/* ---- A2 · 点位时序探针 ---- */
+.probe-pins{position:absolute;z-index:6;left:14px;bottom:38px;width:236px;padding:8px 9px;border:1px solid rgba(96,214,226,.32);border-radius:6px;background:rgba(4,22,36,.93);box-shadow:0 10px 26px rgba(0,0,0,.42);backdrop-filter:blur(8px)}
+.probe-pins-head{display:flex;justify-content:space-between;align-items:center;color:#8fd7e0;font-size:9px}
+.probe-pins-head span{display:flex;align-items:center;gap:6px}
+.probe-pins-head i{width:5px;height:5px;border-radius:50%;background:#ffd694;box-shadow:0 0 7px #ffd694}
+.probe-pins-head button{border:0;background:none;color:#7e9dad;font-family:inherit;font-size:8px;cursor:pointer}
+.probe-pins-head button:hover{color:#ffd694}
+.probe-pins ul{display:flex;max-height:152px;flex-direction:column;gap:7px;margin:7px 0 0;padding:0;overflow:auto;list-style:none}
+.probe-pins li{display:flex;align-items:flex-start;gap:7px}
+.pin-index{display:grid;width:16px;height:16px;flex:0 0 16px;place-items:center;border:1px solid rgba(255,206,120,.5);border-radius:50%;color:#ffd694;font-size:8px}
+.pin-body{flex:1;min-width:0}
+.pin-meta{display:flex;justify-content:space-between;gap:8px;font-size:8px}
+.pin-meta b{color:#cfeaf1;font-weight:500}
+.pin-meta em{color:#ffcf8a;font-style:normal;font-variant-numeric:tabular-nums}
+.pin-meta em.warm-text{color:#ffb875}
+.pin-meta em.cool-text{color:#79c8f5}
+.pin-spark{width:100%;height:22px;margin-top:3px}
+.pin-zero{stroke:rgba(120,160,180,.32);stroke-width:1}
+.pin-line{fill:none;stroke:#5fe3d6;stroke-width:1.4}
+.pin-body small{display:block;margin-top:2px;color:#6f8fa0;font-size:7px}
+.is-compact .probe-pins{width:200px;bottom:32px}
+.is-maximized .probe-pins{left:22px;bottom:46px}
+@media(max-width:700px){.probe-pins{display:none}}
+
+/* ---- A14 · 内嵌回放控制条 ---- */
+.map-replay{position:absolute;z-index:6;top:52px;left:50%;display:flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid rgba(96,214,226,.32);border-radius:20px;background:rgba(4,22,36,.9);box-shadow:0 8px 22px rgba(0,0,0,.36);backdrop-filter:blur(8px);transform:translateX(-50%)}
+.map-replay button{border:0;background:none;color:#8fb6c4;font-size:12px;cursor:pointer;transition:color .18s}
+.map-replay button:hover{color:#e6feff}
+.map-replay .replay-main{display:grid;width:24px;height:24px;place-items:center;border:1px solid rgba(96,224,226,.45);border-radius:50%;color:#8ef0e6;background:rgba(20,96,112,.32);font-size:11px}
+.replay-progress{position:relative;width:118px;height:3px;overflow:hidden;border-radius:3px;background:rgba(28,70,93,.9)}
+.replay-progress i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#4fd8d0,#ffc477)}
+.replay-readout{color:#a9ccd8;font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.replay-speed{padding:3px 6px;border:1px solid rgba(96,214,226,.28);border-radius:3px;font-size:8px}
+.is-maximized .map-replay{top:60px}
+@media(max-width:700px){.map-replay{gap:5px;padding:4px 7px}.replay-progress{width:70px}.replay-readout{display:none}}
 </style>

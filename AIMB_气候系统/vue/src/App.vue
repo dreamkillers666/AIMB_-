@@ -18,6 +18,12 @@ export default {
 <style>
 /* --- 全局深色主题样式 --- */
 
+/* B1 · 平台启动自检期间压住全局 AI 悬浮球，避免穿透启动遮罩 */
+body.enso-booting .ai-orb,
+body.enso-booting .ai-pop {
+  display: none !important;
+}
+
 html, body {
   margin: 0;
   padding: 0;

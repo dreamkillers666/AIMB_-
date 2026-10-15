@@ -1,7 +1,27 @@
 <template>
-  <div class="enso-screen" :class="layerChoice + '-mode'">
+  <div class="enso-screen" :class="[layerChoice + '-mode', { 'boot-hidden': !bootDone }]">
     <div class="ambient-glow ambient-glow-left"></div>
     <div class="ambient-glow ambient-glow-right"></div>
+
+    <!-- B2 · 全局 HUD 框架：四角取景标 + 顶部缓速流光 -->
+    <div class="hud-frame" aria-hidden="true">
+      <span class="hud-mark hud-mark-tl"></span>
+      <span class="hud-mark hud-mark-tr"></span>
+      <span class="hud-mark hud-mark-bl"></span>
+      <span class="hud-mark hud-mark-br"></span>
+      <span class="hud-beam"></span>
+    </div>
+
+    <!-- B1 · 启动自检序列 -->
+    <div v-if="bootVisible" class="boot-overlay" role="status" aria-label="系统启动自检">
+      <div class="boot-card">
+        <div class="boot-title"><span>AIMB · ENSO MONITOR</span><span>SYSTEM BOOT</span></div>
+        <ul class="boot-list">
+          <li v-for="line in bootLines" :key="line.text"><span>{{ line.text }}</span><b>{{ line.state }}</b></li>
+        </ul>
+        <div class="boot-bar"><i :style="{ width: bootProgress + '%' }"></i></div>
+      </div>
+    </div>
 
     <header class="screen-header">
       <div class="brand-lockup">
@@ -50,20 +70,31 @@
       </div>
     </section>
 
+    <!-- B13 · Niño3.4 阈值告警条 -->
+    <div v-if="alertLevel !== 'none'" class="threshold-alert" :class="'alert-' + alertTone" role="status">
+      <span class="alert-glyph"><i class="el-icon-warning-outline"></i></span>
+      <div class="alert-copy">
+        <strong>{{ alertTitle }}</strong>
+        <small>{{ alertDetail }}</small>
+      </div>
+      <span class="alert-value">{{ alertValueText }}</span>
+      <button type="button" @click="openAiBriefingFromTimeline('alert')"><i class="el-icon-cpu"></i>AI 解读</button>
+    </div>
+
     <section class="kpi-strip" aria-label="关键监测指标">
-      <article class="kpi-item">
+      <article class="kpi-item" :class="kpiAlertClass">
         <span class="kpi-icon warm-icon"><i class="el-icon-sunny"></i></span>
-        <div><small>Niño3.4 海温距平</small><strong class="warm-text">{{ displayMonitor.nino34 }}<em>°C</em></strong></div>
+        <div><small>Niño3.4 海温距平</small><strong class="warm-text"><animated-number :value="displayMonitor.nino34" pulse-key="nino34" @change="flashKpi" /><em>°C</em></strong></div>
         <span class="kpi-delta up"><i class="el-icon-top"></i> {{ historyMode ? historyCurrentMonthLabel : '+0.2' }}</span>
       </article>
       <article class="kpi-item">
         <span class="kpi-icon cyan-icon"><i class="el-icon-data-line"></i></span>
-        <div><small>ONI · 3月滑动平均</small><strong>{{ displayMonitor.oni }}<em>°C</em></strong></div>
+        <div><small>ONI · 3月滑动平均</small><strong><animated-number :value="displayMonitor.oni" pulse-key="oni" @change="flashKpi" /><em>°C</em></strong></div>
         <span class="kpi-delta up">{{ historyMode ? historyPhase : '持续偏暖' }}</span>
       </article>
       <article class="kpi-item">
         <span class="kpi-icon blue-icon"><i class="el-icon-odometer"></i></span>
-        <div><small>南方涛动指数 SOI</small><strong class="blue-text">{{ displayMonitor.soi }}</strong></div>
+        <div><small>南方涛动指数 SOI</small><strong class="blue-text"><animated-number :value="displayMonitor.soi" :decimals="1" pulse-key="soi" @change="flashKpi" /></strong></div>
         <span class="kpi-delta">近30日</span>
       </article>
       <article class="kpi-item phase-kpi">
@@ -127,7 +158,7 @@
             <span class="map-heading-note">拖动旋转 · 滚轮缩放 · Niño3.4 核心区追踪</span>
           </div>
 
-          <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" @toggle-maximize="toggleMapMaximize" />
+          <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
           <div class="map-bottomline"><span><i></i>{{ historyMode ? (historyHasData ? historyCurrentMonthLabel + ' · 历史场' : historyActiveItem.label) : '遥感反演场正常' }}</span><span>{{ historyMode ? historyDataSource : 'NOAA OISST v2.1 · ERSST v5' }}</span><span>{{ historyMode && historyHasData ? '固定距平色标 −3 至 +3 ℃' : '距平基准期 1991–2020' }}</span></div>
         </section>
         <div class="map-stat-row">
@@ -173,7 +204,15 @@
       <button class="play-button" type="button" :aria-label="isPlaying ? '暂停演变' : '播放演变'" @click="onPlayClick"><i :class="isPlaying ? 'el-icon-video-pause' : 'el-icon-video-play'"></i></button>
       <div class="timeline-track-wrap">
         <div class="timeline-labels"><span v-for="period in timelineLabels" :key="period.index" :class="{ selected: period.index === currentIndexSafe }" @click="selectTimelineIndex(period.index)">{{ period.label }}</span></div>
-        <input v-model.number="currentIndex" class="timeline-slider" type="range" min="0" :max="Math.max(activePeriods.length - 1, 0)" step="1" aria-label="选择 ENSO 历史月份" :style="{ '--progress': timelineProgress + '%' }" @change="onTimelineChange">
+        <div class="timeline-slider-wrap" @mouseenter="scrubbing = true" @mouseleave="scrubbing = false" @touchstart="scrubbing = true" @touchend="scrubbing = false">
+          <div v-if="scrubbing" class="timeline-bubble" :style="{ left: timelineProgress + '%' }">{{ timelineBubble }}</div>
+          <input v-model.number="currentIndex" class="timeline-slider" type="range" min="0" :max="Math.max(activePeriods.length - 1, 0)" step="1" aria-label="选择 ENSO 历史月份" :style="{ '--progress': timelineProgress + '%' }" @change="onTimelineChange">
+          <!-- B14 · 位相色带 + 强事件标记 -->
+          <div class="timeline-phase-band">
+            <span v-for="(band, index) in phaseBands" :key="'band-' + index" :style="{ width: band.width + '%', background: band.color }" :title="band.label"></span>
+            <i v-for="marker in phaseMarkers" :key="'mark-' + marker.index" class="timeline-event-mark" :style="{ left: marker.left + '%' }" :title="marker.label"></i>
+          </div>
+        </div>
       </div>
       <div class="timeline-current"><span>当前时次</span><strong>{{ activePeriod }}</strong><small>{{ historyMode ? historyCurrentPointLabel : (currentIndex < 3 ? '观测场' : '预测场') }}</small></div>
       <button type="button" class="timeline-ai-button" :class="{ ready: historyMode }" title="点击演变时间轴即唤起 AI 助手解读；也可由此按钮主动打开" @click="openAiBriefingFromTimeline('button')"><i class="el-icon-cpu"></i>AI 解读</button>
@@ -206,13 +245,23 @@
 <script>
 import * as echarts from 'echarts'
 import EnsoMapPanel from '@/components/EnsoMapPanel.vue'
+import AnimatedNumber from '@/components/AnimatedNumber.vue'
 import { historyEvents, modelStartOptions, modelReplay, fieldForPoint } from '@/data/ensoHistory'
 import { openAiBriefing } from '@/utils/aiBus'
 import { getModelReports } from '@/data/ensoReports'
 
+const BOOT_LINES = [
+  { text: 'LINK · NOAA OISST v2.1 观测网', state: 'OK' },
+  { text: 'LINK · ERSST v5 再分析资料', state: 'OK' },
+  { text: 'LINK · GFS 风场分析场', state: 'OK' },
+  { text: 'INIT · LSTA-Swin 长提前期模型', state: 'READY' },
+  { text: 'CAL · Niño3.4 / ONI 指数基线', state: '1991–2020' },
+  { text: 'SYNC · ENSO 影响研判 Agent', state: 'ONLINE' }
+]
+
 export default {
   name: 'ForecastENSOScreen',
-  components: { EnsoMapPanel },
+  components: { EnsoMapPanel, AnimatedNumber },
   data() {
     const queryStart = this.$route && this.$route.query
       ? (Array.isArray(this.$route.query.start) ? this.$route.query.start[0] : this.$route.query.start)
@@ -226,6 +275,7 @@ export default {
       clockTimer: null,
       playTimer: null,
       isPlaying: false,
+      playbackIntervalMs: 900,
       charts: {},
       currentIndex: 3,
       historyType: hasModelStart ? 'model' : 'event',
@@ -236,6 +286,15 @@ export default {
       mapMaximized: false,
       liveStatusVisible: false,
       layerChoice: 'combined',
+      scrubbing: false,
+      // B1 · 启动自检
+      bootVisible: true,
+      bootDone: false,
+      bootLines: [],
+      bootTimers: [],
+      // B3 · KPI 脉冲
+      pulseKey: '',
+      pulseTimer: null,
       periods: ['2026 JJA', '2026 JAS', '2026 ASO', '2026 SON', '2026 OND', '2027 NDJ'],
       monitor: { nino34: '+0.8', oni: '+0.7', soi: '−0.4', status: '厄尔尼诺' },
       heatContent: [
@@ -343,6 +402,87 @@ export default {
       if (value <= -1) return '冷异常核心'
       if (value <= -0.5) return '冷位相维持'
       return '中性过渡'
+    },
+    // ---- B13 · Niño3.4 阈值告警 ----
+    monitorValue() {
+      const parsed = Number.parseFloat(String(this.monitor.nino34).replace('−', '-').replace('+', ''))
+      return Number.isFinite(parsed) ? parsed : null
+    },
+    alertValue() {
+      return this.historyMode ? this.historyCurrentValue : this.monitorValue
+    },
+    alertLevel() {
+      const value = this.alertValue
+      if (value === null) return 'none'
+      const magnitude = Math.abs(value)
+      if (magnitude >= 1) return 'strong'
+      if (magnitude >= 0.5) return 'watch'
+      return 'none'
+    },
+    alertTone() {
+      const value = this.alertValue
+      return value !== null && value < 0 ? 'cool' : 'warm'
+    },
+    alertValueText() {
+      const value = this.alertValue
+      return value === null ? '—' : `${this.signedValue(value)}℃`
+    },
+    alertTitle() {
+      const strong = this.alertLevel === 'strong'
+      const warm = this.alertTone === 'warm'
+      if (warm) return strong ? '强暖异常告警' : '暖异常阈值提醒'
+      return strong ? '强冷异常告警' : '冷异常阈值提醒'
+    },
+    alertDetail() {
+      const strong = this.alertLevel === 'strong'
+      const warm = this.alertTone === 'warm'
+      const threshold = strong ? '1.0℃' : '0.5℃'
+      const phase = warm ? '厄尔尼诺' : '拉尼娜'
+      return `Niño3.4 距平已越过 ${warm ? '+' : '−'}${threshold} ${phase}判定阈值，请关注后续演变与区域气候响应`
+    },
+    kpiAlertClass() {
+      if (this.alertLevel === 'none') return {}
+      return this.alertTone === 'warm' ? 'kpi-alert-warm' : 'kpi-alert-cool'
+    },
+    // ---- B14 · 时间轴位相色带 ----
+    phaseBands() {
+      const periods = this.activePeriods
+      if (!periods.length) return []
+      const values = this.historyMode
+        ? this.historySeries.map(point => (point.value === null || point.value === '' ? null : Number(point.value)))
+        : []
+      return periods.map((label, index) => {
+        const value = values[index]
+        const finite = value !== null && Number.isFinite(value)
+        return {
+          label: `${label} · ${finite ? `${this.signedValue(value)}℃` : '无数据'}`,
+          color: this.phaseColor(finite ? value : null),
+          width: 100 / periods.length
+        }
+      })
+    },
+    phaseMarkers() {
+      if (!this.historyMode || this.historySeries.length < 2) return []
+      return this.historySeries
+        .map((point, index) => ({ index, value: Number(point.value) }))
+        .filter(item => Number.isFinite(item.value) && Math.abs(item.value) >= 1.5)
+        .map(item => ({
+          index: item.index,
+          left: (item.index / (this.historySeries.length - 1)) * 100,
+          label: `${this.historySeries[item.index].month} · ${this.signedValue(item.value)}℃ 强事件`
+        }))
+    },
+    timelineBubble() {
+      const value = this.alertValue
+      return `${this.activePeriod} · ${value === null ? '—' : `${this.signedValue(value)}℃`}`
+    },
+    bootProgress() {
+      return Math.round((this.bootLines.length / BOOT_LINES.length) * 100)
+    },
+    // A2/A14 · 回放身份：供地图判断点位曲线是否需要归零重计
+    replayKey() {
+      if (!this.historyMode) return 'live'
+      return this.historyType === 'model' ? `model:${this.selectedHistoryModelStart}` : `event:${this.selectedHistoryEventId}`
     },
     historyDataSource() {
       return this.historyActiveItem && this.historyActiveItem.source ? this.historyActiveItem.source : '历史数据目录'
@@ -611,6 +751,7 @@ export default {
   mounted() {
     this.updateClock()
     this.clockTimer = setInterval(this.updateClock, 1000)
+    this.runBootSequence()
     this.$nextTick(() => {
       this.initCharts()
       window.addEventListener('resize', this.handleResize)
@@ -620,12 +761,70 @@ export default {
   beforeDestroy() {
     clearInterval(this.clockTimer)
     clearInterval(this.playTimer)
+    if (this.pulseTimer) clearTimeout(this.pulseTimer)
+    this.bootTimers.forEach(timer => clearTimeout(timer))
+    this.bootTimers = []
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('keydown', this.handleKeydown)
     document.body.style.overflow = ''
     Object.keys(this.charts).forEach(key => this.charts[key] && this.charts[key].dispose())
   },
   methods: {
+    // ---- B1 · 启动自检序列 ----
+    runBootSequence() {
+      document.body.classList.add('enso-booting')
+      const reduceMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduceMotion) {
+        this.bootLines = BOOT_LINES.slice()
+        this.finishBoot()
+        return
+      }
+      BOOT_LINES.forEach((line, index) => {
+        const timer = window.setTimeout(() => {
+          this.bootLines.push(line)
+          if (index === BOOT_LINES.length - 1) {
+            this.bootTimers.push(window.setTimeout(() => this.finishBoot(), 420))
+          }
+        }, index * 190)
+        this.bootTimers.push(timer)
+      })
+    },
+    finishBoot() {
+      this.bootVisible = false
+      this.bootDone = true
+      document.body.classList.remove('enso-booting')
+    },
+    // ---- B3 · KPI 脉冲 ----
+    flashKpi(key) {
+      this.pulseKey = key
+      if (this.pulseTimer) clearTimeout(this.pulseTimer)
+      this.pulseTimer = setTimeout(() => { this.pulseKey = '' }, 700)
+    },
+    // ---- A14 · 地图内嵌回放桥接 ----
+    seekReplay(index) {
+      const max = Math.max(this.activePeriods.length - 1, 0)
+      this.currentIndex = Math.min(Math.max(index, 0), max)
+    },
+    stepReplay(delta) {
+      this.seekReplay(this.currentIndexSafe + delta)
+    },
+    setReplaySpeed(interval) {
+      this.playbackIntervalMs = interval
+      if (this.isPlaying) {
+        this.stopPlayback()
+        this.togglePlayback()
+      }
+    },
+    // ---- B14 · 时间轴位相配色 ----
+    phaseColor(value) {
+      if (value === null) return 'rgba(40,88,112,.5)'
+      if (value >= 1.5) return 'rgba(255,120,80,.85)'
+      if (value >= 0.5) return 'rgba(255,176,104,.7)'
+      if (value <= -1) return 'rgba(70,140,235,.85)'
+      if (value <= -0.5) return 'rgba(80,190,215,.7)'
+      return 'rgba(45,200,190,.55)'
+    },
     updateClock() {
       const now = new Date()
       this.nowTime = now.toLocaleTimeString('zh-CN', { hour12: false })
@@ -686,7 +885,19 @@ export default {
       this.$nextTick(() => this.handleResize())
     },
     handleKeydown(event) {
-      if (event.key === 'Escape' && this.mapMaximized) this.toggleMapMaximize()
+      if (event.key === 'Escape' && this.mapMaximized) {
+        this.toggleMapMaximize()
+        return
+      }
+      // B14 · ←/→ 逐月步进时间轴（滑杆自身聚焦时交给原生行为，避免双重触发）
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      const target = event.target
+      const tag = target && target.tagName
+      const isSlider = target && target.className && String(target.className).indexOf('timeline-slider') > -1
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || isSlider) return
+      if (this.activePeriods.length < 2) return
+      event.preventDefault()
+      this.stepReplay(event.key === 'ArrowLeft' ? -1 : 1)
     },
     scrollToModule(id) {
       const target = document.getElementById(id)
@@ -702,7 +913,7 @@ export default {
       this.isPlaying = true
       this.playTimer = setInterval(() => {
         this.currentIndex = (this.currentIndexSafe + 1) % length
-      }, 900)
+      }, this.playbackIntervalMs)
     },
     selectHistoryType(type) {
       this.historyType = type
@@ -989,4 +1200,55 @@ export default {
 .timeline-ai-button.ready:hover{color:#e9fffb;background:rgba(22,110,104,.55)}
 @media(max-width:1200px){.timeline-ai-button{padding:5px 8px;font-size:8px}.timeline-ai-button i{font-size:10px}}
 @media(max-width:680px){.timeline-ai-button{padding:5px 7px}.timeline-ai-button i{font-size:10px}}
+
+/* ---- B1 · 启动自检 ---- */
+.boot-overlay{position:fixed;inset:0;z-index:20000;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(8,64,86,.5),transparent 45%),#03121e}
+.boot-card{width:min(430px,86vw);padding:22px 24px;border:1px solid rgba(80,206,220,.3);border-radius:10px;background:rgba(5,26,41,.96);box-shadow:0 24px 70px rgba(0,0,0,.5),0 0 30px rgba(60,205,220,.1)}
+.boot-title{display:flex;justify-content:space-between;color:#7fe3ea;font-size:10px;letter-spacing:2px}
+.boot-list{display:flex;flex-direction:column;gap:8px;margin:14px 0 0;padding:0;list-style:none}
+.boot-list li{display:flex;justify-content:space-between;gap:12px;color:#a8c6d3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;animation:bootLineIn .28s ease-out both}
+.boot-list li b{color:#5fe3c8;font-size:10px;font-weight:500}
+.boot-bar{margin-top:16px;height:2px;overflow:hidden;background:rgba(28,70,93,.9)}
+.boot-bar i{display:block;height:100%;background:linear-gradient(90deg,#4fd8d0,#ffc477);transition:width .18s linear}
+@keyframes bootLineIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.enso-screen.boot-hidden .screen-header,.enso-screen.boot-hidden .history-control,.enso-screen.boot-hidden .threshold-alert,.enso-screen.boot-hidden .kpi-strip,.enso-screen.boot-hidden .screen-body,.enso-screen.boot-hidden .time-control,.enso-screen.boot-hidden .module-workbench{opacity:0;transform:translateY(8px)}
+.screen-header,.history-control,.threshold-alert,.kpi-strip,.screen-body,.time-control,.module-workbench{transition:opacity .5s ease,transform .5s ease}
+
+/* ---- B2 · 全局 HUD 框架 ---- */
+.hud-frame{position:fixed;inset:0;z-index:30;pointer-events:none}
+.hud-mark{position:absolute;width:18px;height:18px;border:1px solid rgba(94,224,226,.32)}
+.hud-mark-tl{top:6px;left:6px;border-right:0;border-bottom:0}
+.hud-mark-tr{top:6px;right:6px;border-bottom:0;border-left:0}
+.hud-mark-bl{bottom:6px;left:6px;border-top:0;border-right:0}
+.hud-mark-br{bottom:6px;right:6px;border-top:0;border-left:0}
+.hud-beam{position:absolute;top:0;left:0;width:22%;height:1px;background:linear-gradient(90deg,transparent,rgba(94,224,226,.75),transparent);animation:hudBeam 9s linear infinite}
+@keyframes hudBeam{0%{transform:translateX(-30%)}100%{transform:translateX(520%)}}
+
+/* ---- B3 · KPI 数字翻牌脉冲 ---- */
+.kpi-item.kpi-pulse{animation:kpiPulse .7s ease-out}
+@keyframes kpiPulse{0%{box-shadow:inset 0 0 0 1px rgba(255,206,132,.85),0 0 18px rgba(255,190,110,.3)}100%{box-shadow:none}}
+.kpi-item.kpi-alert-warm{box-shadow:inset 0 0 26px rgba(255,120,60,.16),0 0 16px rgba(255,140,70,.12)}
+.kpi-item.kpi-alert-cool{box-shadow:inset 0 0 26px rgba(60,130,220,.18),0 0 16px rgba(80,150,235,.12)}
+
+/* ---- B13 · 阈值告警条 ---- */
+.threshold-alert{display:flex;align-items:center;gap:10px;flex:0 0 auto;padding:7px 12px;border:1px solid rgba(255,150,90,.4);border-radius:6px;background:linear-gradient(100deg,rgba(60,30,16,.86),rgba(35,20,14,.7));animation:alertIn .3s ease-out both}
+.threshold-alert.alert-cool{border-color:rgba(90,170,235,.42);background:linear-gradient(100deg,rgba(14,32,58,.86),rgba(12,24,44,.7))}
+.alert-glyph{display:grid;width:24px;height:24px;flex:0 0 24px;place-items:center;border-radius:50%;background:rgba(255,150,90,.16);color:#ffb06a;font-size:13px}
+.alert-cool .alert-glyph{background:rgba(90,170,235,.16);color:#8cc0ff}
+.alert-copy{flex:1;min-width:0}
+.alert-copy strong{display:block;color:#ffd0a2;font-size:10px;font-weight:600}
+.alert-cool .alert-copy strong{color:#bcd9ff}
+.alert-copy small{display:block;margin-top:2px;color:#a58d7c;font-size:8px}
+.alert-value{color:#fff;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.threshold-alert button{display:flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid rgba(255,180,110,.3);border-radius:4px;color:#ffcda4;background:rgba(120,60,25,.28);font-family:inherit;font-size:9px;cursor:pointer}
+.threshold-alert.alert-cool button{border-color:rgba(140,190,255,.32);color:#bcd9ff;background:rgba(30,60,110,.3)}
+@keyframes alertIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+/* ---- B14 · 时间轴位相色带 / 拖动气泡 ---- */
+.timeline-slider-wrap{position:relative}
+.timeline-bubble{position:absolute;bottom:16px;padding:3px 7px;border:1px solid rgba(255,206,132,.4);border-radius:4px;background:rgba(8,34,50,.95);color:#ffd79a;font-size:8px;font-variant-numeric:tabular-nums;white-space:nowrap;transform:translateX(-50%);pointer-events:none}
+.timeline-phase-band{position:relative;display:flex;gap:1px;height:5px;margin-top:7px;overflow:visible;border-radius:3px}
+.timeline-phase-band span{height:100%}
+.timeline-event-mark{position:absolute;top:-3px;width:5px;height:5px;background:#ffd79a;box-shadow:0 0 6px rgba(255,206,132,.9);transform:translateX(-50%) rotate(45deg)}
+@media(max-width:620px){.threshold-alert{gap:7px;padding:6px 9px}.alert-copy small{display:none}}
 </style>
