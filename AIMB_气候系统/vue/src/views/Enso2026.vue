@@ -252,7 +252,7 @@ export default {
       systemCapabilities: [
         { title: 'ENSO 监测', description: '查看 Niño3.4、ONI、SOI、海温距平、风场和海洋热含量的动态状态。', icon: 'el-icon-monitor', tone: 'cyan', path: '/enso/monitor', action: '打开监测平台' },
         { title: '预测模型', description: '对比 LSTA-Swin 与 ConvLSTM 的长提前期预测轨迹和空间场输出。', icon: 'el-icon-data-analysis', tone: 'gold', path: '/enso/models', action: '查看模型产品' },
-        { title: '历史数据', description: '在 ENSO 监测平台中选择历史事件或 LSTA-Swin 起报月份，联动查看空间场、指数和风场。', icon: 'el-icon-time', tone: 'violet', path: '/enso/monitor?view=history', action: '进入历史数据' },
+        { title: '历史数据', description: '在历史回放中选择历史事件或 LSTA-Swin 起报月份，联动查看空间场、指数和风场。', icon: 'el-icon-time', tone: 'violet', path: '/enso/replay', action: '进入历史数据' },
         { title: '提前期验证', description: '从 PCC、MAE、RMSE 和状态分档等角度评估预测技巧的衰减与稳定性。', icon: 'el-icon-s-check', tone: 'green', path: '/enso/validation', action: '查看验证结果' },
         { title: '物理解释', description: '通过时空演变、相关性和显著性图，追踪模型关注的海气信号。', icon: 'el-icon-view', tone: 'blue', path: '/enso/explainability', action: '分析物理信号' },
         { title: '气候 NC', description: '浏览 NetCDF 格点变量与时次，为区域气候影响分析提供数据底座。', icon: 'el-icon-picture-outline', tone: 'purple', path: '/enso/climate-data', action: '打开数据浏览' }

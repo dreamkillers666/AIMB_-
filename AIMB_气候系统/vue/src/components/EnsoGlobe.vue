@@ -45,7 +45,8 @@
 
 <script>
 import * as THREE from 'three';
-import earthMapUrl from '../assets/earth.jpg';
+import earthMapUrl from '../assets/earth-blue-marble.jpg';
+import waterMaskUrl from '../assets/earth-water.png';
 import { ensoFieldColor } from '../data/ensoColorScale';
 
 const RADIUS = 2;
@@ -139,7 +140,7 @@ export default {
         const starfield = this.createStarfield();
         scene.add(starfield);
         const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 80);
-        camera.position.set(0, 0, 6.1);
+        camera.position.set(0, 0, 5.3);
 
         const group = new THREE.Group();
         group.rotation.set(0.08, -Math.PI * 2 / 3, 0);
@@ -158,10 +159,10 @@ export default {
         group.add(orbitAccent);
 
         const earthGeometry = new THREE.SphereGeometry(RADIUS, 256, 192);
-        const earthMaterial = new THREE.MeshStandardMaterial({
+        const earthMaterial = new THREE.MeshPhongMaterial({
           color: 0xffffff,
-          roughness: 0.92,
-          metalness: 0.02
+          shininess: 16,
+          specular: new THREE.Color(0x2a4a58)
         });
         const earth = new THREE.Mesh(earthGeometry, earthMaterial);
         group.add(earth);
@@ -274,7 +275,7 @@ export default {
           windColor: new THREE.Color(),
           earthTexture: null,
           sstTexture: null,
-          zoom: 6.1,
+          zoom: 5.3,
           mobileZoom: 1,
           pointerDown: null,
           pointerMove: null,
@@ -424,7 +425,8 @@ export default {
     loadEarthTexture() {
       const state = this._three;
       if (!state) return;
-      new THREE.TextureLoader().load(earthMapUrl, (texture) => {
+      const loader = new THREE.TextureLoader();
+      loader.load(earthMapUrl, (texture) => {
         if (this._three !== state) {
           texture.dispose();
           return;
@@ -437,6 +439,37 @@ export default {
         state.earthMaterial.map = texture;
         state.earthMaterial.needsUpdate = true;
       });
+      // 海洋高光贴图（白=海洋，黑=陆地）：让海面出现真实的高光反射
+      loader.load(waterMaskUrl, (maskTexture) => {
+        if (this._three !== state) {
+          maskTexture.dispose();
+          return;
+        }
+        maskTexture.wrapS = THREE.RepeatWrapping;
+        maskTexture.offset.x = 0.5;
+        state.earthMaterial.specularMap = maskTexture;
+        state.earthMaterial.needsUpdate = true;
+      });
+      // 预加载水体掩膜的原始像素，用于给海温叠加做陆地裁切
+      this.loadWaterMaskImage().then((image) => {
+        if (image && this._three === state) this.refreshSurfaceTextures();
+      });
+    },
+
+    loadWaterMaskImage() {
+      if (this._waterMaskImage) return Promise.resolve(this._waterMaskImage);
+      if (!this._waterMaskPromise) {
+        this._waterMaskPromise = new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => {
+            this._waterMaskImage = image;
+            resolve(image);
+          };
+          image.onerror = () => resolve(null);
+          image.src = waterMaskUrl;
+        });
+      }
+      return this._waterMaskPromise;
     },
 
     makeTextures() {
@@ -454,13 +487,35 @@ export default {
         return new THREE.CanvasTexture(document.createElement('canvas'));
       }
 
-      const width = Math.max(720, Math.min(1440, sourceWidth * 4));
+      const isSmallScreen = window.innerWidth < 768;
+      const width = isSmallScreen ? 1024 : 2048;
       const height = width / 2;
       const sstCanvas = document.createElement('canvas');
       sstCanvas.width = width;
       sstCanvas.height = height;
       const sstContext = sstCanvas.getContext('2d');
       const sstImage = sstContext.createImageData(width, height);
+
+      // 陆地掩膜：白=海洋、黑=陆地。海温只画在海上，与陆地边界清晰
+      let maskData = null;
+      let maskWidth = 0;
+      let maskHeight = 0;
+      const maskImage = this._waterMaskImage;
+      if (maskImage && maskImage.width) {
+        maskWidth = maskImage.width;
+        maskHeight = maskImage.height;
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = maskWidth;
+        maskCanvas.height = maskHeight;
+        const maskContext = maskCanvas.getContext('2d');
+        maskContext.drawImage(maskImage, 0, 0);
+        maskData = maskContext.getImageData(0, 0, maskWidth, maskHeight).data;
+      }
+      // 掩膜灰度 -> 海洋系数：40~140 之间平滑过渡，海岸线柔和不生硬
+      const oceanFactor = (gray) => {
+        const t = Math.max(0, Math.min(1, (gray - 40) / (140 - 40)));
+        return t * t * (3 - 2 * t);
+      };
 
       const wrapsLongitude = sourceWidth * Math.abs(dx) >= 359.5;
       const sample = (x, y) => {
@@ -508,11 +563,18 @@ export default {
             }
           });
           if (totalWeight <= 0.01) continue;
+          let maskFactor = 1;
+          if (maskData) {
+            const maskX = Math.min(maskWidth - 1, Math.floor((((longitude / 360) + 0.5) % 1) * maskWidth));
+            const maskY = Math.min(maskHeight - 1, Math.floor(((90 - latitude) / 180) * maskHeight));
+            maskFactor = oceanFactor(maskData[(maskY * maskWidth + maskX) * 4]);
+            if (maskFactor <= 0.01) continue;
+          }
           const color = this.sstColor(weighted / totalWeight);
           sstImage.data[offset] = color[0];
           sstImage.data[offset + 1] = color[1];
           sstImage.data[offset + 2] = color[2];
-          sstImage.data[offset + 3] = Math.round(238 * totalWeight);
+          sstImage.data[offset + 3] = Math.round(238 * totalWeight * maskFactor);
         }
       }
       sstContext.putImageData(sstImage, 0, 0);
@@ -705,7 +767,7 @@ export default {
       };
       state.wheel = (event) => {
         event.preventDefault();
-      state.zoom = Math.max(4.25, Math.min(8.5, state.zoom + Math.sign(event.deltaY) * 0.32));
+      state.zoom = Math.max(3.6, Math.min(7.4, state.zoom + Math.sign(event.deltaY) * 0.32));
         state.camera.position.z = state.zoom * state.mobileZoom;
       };
       canvas.addEventListener('pointerdown', state.pointerDown);
@@ -878,7 +940,7 @@ export default {
       const state = this._three;
       if (!state) return;
       state.group.rotation.set(0.08, -Math.PI * 2 / 3, 0);
-      state.zoom = 6.1;
+      state.zoom = 5.3;
       state.camera.position.set(0, 0, state.zoom * state.mobileZoom);
     },
 
@@ -886,7 +948,7 @@ export default {
       const state = this._three;
       if (!state) return;
       state.group.rotation.set(0, Math.PI / 2 - (215 * Math.PI / 180), 0);
-      state.zoom = 5.05;
+      state.zoom = 4.55;
       state.camera.position.set(0, 0, state.zoom * state.mobileZoom);
     },
 
