@@ -1,4 +1,5 @@
 import demoCases from './ensoDemo'
+import { isLand } from './landMask'
 
 const monthKey = (year, month) => `${year}-${String(month).padStart(2, '0')}`
 
@@ -175,17 +176,9 @@ const longitudeDistance = (a, b) => {
   return Math.min(distance, 360 - distance)
 }
 
-const isLikelyLand = (longitude, latitude) => {
-  if (latitude < -60) return true
-  if (longitude >= 230 && longitude <= 310 && latitude >= 10 && latitude <= 75) return true
-  if (longitude >= 280 && longitude <= 330 && latitude >= -58 && latitude < 10) return true
-  if (longitude <= 55 && latitude >= -35 && latitude <= 35) return true
-  if (longitude <= 180 && latitude >= 28 && latitude <= 75) return true
-  if (longitude >= 65 && longitude <= 150 && latitude >= 5 && latitude <= 28) return true
-  if (longitude >= 95 && longitude <= 155 && latitude >= -45 && latitude <= -10) return true
-  if (longitude >= 95 && longitude <= 145 && latitude >= -10 && latitude <= 10) return true
-  return false
-}
+// 陆地判断：landMask.js 提供基于 Natural Earth 50m 海岸线的 1° 位掩膜。
+// 历史版本用矩形框近似陆地，会把南/北大西洋整片海域误判成陆地，
+// 导致回放海温在大西洋中部大面积缺失。
 
 // A low-resolution, deterministic anomaly field keeps the replay responsive while
 // preserving the spatial pattern of an equatorial Pacific ENSO signal.
@@ -206,7 +199,7 @@ export const makeAnomalyField = (index, seed = 0) => {
       const longitude = xi * 5
       // 高纬度海洋不合成数据：真实 OISST 距平在高纬海冰区基本缺测，
       // 强行铺值会在北冰洋/白令海形成与底图海冰冲突的块状马赛克
-      if (Math.abs(latitude) >= 66 || isLikelyLand(longitude, latitude)) {
+      if (Math.abs(latitude) >= 66 || isLand(longitude, latitude)) {
         data.push(null)
         continue
       }
