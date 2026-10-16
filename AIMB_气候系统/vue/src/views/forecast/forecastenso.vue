@@ -104,12 +104,22 @@
       </article>
     </section>
 
+    <!-- B4 · 数据流水线：观测 → 模型 → 验证 → 服务 -->
+    <div class="pipeline-strip" aria-label="平台数据流水线">
+      <span class="pipeline-flow" aria-hidden="true"></span>
+      <div v-for="(node, index) in pipelineNodes" :key="node.en" class="pipeline-node" :class="{ active: pipelineActive === index }">
+        <span class="node-dot"><i :class="node.icon"></i></span>
+        <div class="node-copy"><b>{{ node.en }}</b><small>{{ node.zh }}</small></div>
+      </div>
+    </div>
+
     <main class="screen-body">
       <aside class="side-column left-column">
         <section class="panel-card phase-card">
           <div class="panel-heading">
             <div><span class="panel-kicker">{{ historyMode ? 'HISTORICAL MONITORING' : 'LIVE OBSERVATION' }}</span><h2>{{ historyMode ? '海气历史监测' : '海气实时监测' }}</h2></div>
             <span class="data-age"><i></i>更新于 {{ dataUpdatedAt }}</span>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('phase')"><i class="el-icon-cpu"></i></button>
           </div>
           <div class="phase-reading">
             <div class="phase-orbit"><div class="orbit-track"></div><div class="orbit-core"><span>ONI</span><strong>{{ displayMonitor.oni }}</strong><small>°C</small></div><i class="orbit-satellite"></i></div>
@@ -126,6 +136,7 @@
           <div class="panel-heading">
             <div><span class="panel-kicker">OCEAN HEAT CONTENT</span><h2>海洋热含量变化</h2></div>
             <span class="unit-label">℃ · 0–300m</span>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('heat')"><i class="el-icon-cpu"></i></button>
           </div>
           <div class="intensity-meter">
             <div class="intensity-scale"><span>+2.0</span><span>+1.0</span><span>0</span><span>−1.0</span></div>
@@ -142,6 +153,7 @@
           <div class="panel-heading">
             <div><span class="panel-kicker">RECENT SIGNALS</span><h2>关键气候信号</h2></div>
             <button class="quiet-action" type="button" @click="refreshData"><i class="el-icon-refresh"></i>刷新</button>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('signals')"><i class="el-icon-cpu"></i></button>
           </div>
           <div class="signal-list">
             <div v-for="signal in displaySignals" :key="signal.time + signal.title" class="signal-row">
@@ -158,7 +170,7 @@
             <span class="map-heading-note">拖动旋转 · 滚轮缩放 · Niño3.4 核心区追踪</span>
           </div>
 
-          <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
+          <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" :compare-field="mapCompareField" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
           <div class="map-bottomline"><span><i></i>{{ historyMode ? (historyHasData ? historyCurrentMonthLabel + ' · 历史场' : historyActiveItem.label) : '遥感反演场正常' }}</span><span>{{ historyMode ? historyDataSource : 'NOAA OISST v2.1 · ERSST v5' }}</span><span>{{ historyMode && historyHasData ? '固定距平色标 −3 至 +3 ℃' : '距平基准期 1991–2020' }}</span></div>
         </section>
         <div class="map-stat-row">
@@ -171,6 +183,7 @@
           <div class="panel-heading">
             <div><span class="panel-kicker">IRI MULTI-MODEL OUTLOOK</span><h2>未来 ENSO 状态概率</h2></div>
             <span class="small-badge">6 季展望</span>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('probability')"><i class="el-icon-cpu"></i></button>
           </div>
           <div ref="probabilityChart" class="probability-chart"></div>
           <div class="chart-legend"><span><i class="legend-el-nino"></i>厄尔尼诺</span><span><i class="legend-neutral-dot"></i>中性</span><span><i class="legend-la-nina"></i>拉尼娜</span></div>
@@ -179,6 +192,7 @@
           <div class="panel-heading">
             <div><span class="panel-kicker">{{ historyMode ? 'NINO3.4 INDEX · HISTORICAL' : 'NINO3.4 INDEX · OBS / FCST' }}</span><h2>指数演变趋势</h2></div>
             <span class="unit-label">°C</span>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('index')"><i class="el-icon-cpu"></i></button>
           </div>
           <div ref="indexChart" class="index-chart"></div>
           <div class="forecast-legend"><span><i class="observed-line"></i>{{ historyMode ? (historyType === 'event' ? '事件指数' : 'LSTA-Swin 预测') : '观测' }}</span><span><i class="forecast-line"></i>{{ historyMode && historyType === 'model' ? '观测代理' : '预测' }}</span><span><i class="threshold-line"></i>±0.5 阈值</span></div>
@@ -187,6 +201,7 @@
           <div class="panel-heading">
             <div><span class="panel-kicker">GLOBAL TELECONNECTIONS</span><h2>区域影响信号</h2></div>
             <span class="risk-status"><i></i>{{ impactStatus }}</span>
+            <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('impact')"><i class="el-icon-cpu"></i></button>
           </div>
           <div class="impact-list">
             <div v-for="risk in displayRiskLevels" :key="risk.name" class="impact-row">
@@ -247,7 +262,7 @@ import * as echarts from 'echarts'
 import EnsoMapPanel from '@/components/EnsoMapPanel.vue'
 import AnimatedNumber from '@/components/AnimatedNumber.vue'
 import { historyEvents, modelStartOptions, modelReplay, fieldForPoint } from '@/data/ensoHistory'
-import { openAiBriefing } from '@/utils/aiBus'
+import { openAiBriefing, openAiChat } from '@/utils/aiBus'
 import { getModelReports } from '@/data/ensoReports'
 
 const BOOT_LINES = [
@@ -295,6 +310,15 @@ export default {
       // B3 · KPI 脉冲
       pulseKey: '',
       pulseTimer: null,
+      // B4 · 数据流水线
+      pipelineActive: 0,
+      pipelineTimer: null,
+      pipelineNodes: [
+        { en: 'OBSERVE', zh: '数据接入', icon: 'el-icon-upload' },
+        { en: 'MODEL', zh: '模型推演', icon: 'el-icon-cpu' },
+        { en: 'VERIFY', zh: '可信验证', icon: 'el-icon-finished' },
+        { en: 'SERVE', zh: '决策服务', icon: 'el-icon-s-data' }
+      ],
       periods: ['2026 JJA', '2026 JAS', '2026 ASO', '2026 SON', '2026 OND', '2027 NDJ'],
       monitor: { nino34: '+0.8', oni: '+0.7', soi: '−0.4', status: '厄尔尼诺' },
       heatContent: [
@@ -483,6 +507,13 @@ export default {
     replayKey() {
       if (!this.historyMode) return 'live'
       return this.historyType === 'model' ? `model:${this.selectedHistoryModelStart}` : `event:${this.selectedHistoryEventId}`
+    },
+    // A7 · 卷帘对比参考场：历史模式下的上一帧（实时模式无对比）
+    mapCompareField() {
+      if (!this.historyMode || !this.historyHasData || this.currentIndexSafe <= 0) return null
+      const previous = this.historySeries[this.currentIndexSafe - 1]
+      if (!previous) return null
+      return fieldForPoint(previous, this.historyType, this.currentIndexSafe - 1)
     },
     historyDataSource() {
       return this.historyActiveItem && this.historyActiveItem.source ? this.historyActiveItem.source : '历史数据目录'
@@ -752,6 +783,9 @@ export default {
     this.updateClock()
     this.clockTimer = setInterval(this.updateClock, 1000)
     this.runBootSequence()
+    this.pipelineTimer = setInterval(() => {
+      this.pipelineActive = (this.pipelineActive + 1) % this.pipelineNodes.length
+    }, 2200)
     this.$nextTick(() => {
       this.initCharts()
       window.addEventListener('resize', this.handleResize)
@@ -761,6 +795,7 @@ export default {
   beforeDestroy() {
     clearInterval(this.clockTimer)
     clearInterval(this.playTimer)
+    clearInterval(this.pipelineTimer)
     if (this.pulseTimer) clearTimeout(this.pulseTimer)
     this.bootTimers.forEach(timer => clearTimeout(timer))
     this.bootTimers = []
@@ -800,6 +835,21 @@ export default {
       this.pulseKey = key
       if (this.pulseTimer) clearTimeout(this.pulseTimer)
       this.pulseTimer = setTimeout(() => { this.pulseKey = '' }, 700)
+    },
+    // ---- B10 · 面板级 AI 问询：把该面板当前数据打包进提问 ----
+    askAi(panel) {
+      const when = this.historyMode ? `${this.historyCurrentMonthLabel}（${this.historyPhase}）` : `实时（${this.displayMonitor.status}）`
+      const indexLine = `Niño3.4 距平 ${this.displayMonitor.nino34}℃ · ONI ${this.displayMonitor.oni}℃ · SOI ${this.displayMonitor.soi}`
+      const prompts = {
+        phase: `【海气实时监测面板】当前 ${when}，${indexLine}；东太平洋 SST ${this.displayObservation.east}，信风距平 ${this.displayObservation.wind} m/s，暖水体积 ${this.displayObservation.volume}%，阈值进度 ${this.displayThreshold}%。请说明当前海气配置所处的 ENSO 阶段与演变方向，指出未来 1–2 个季节最值得跟踪的信号，并简要提示对中国区域气候的可能影响。`,
+        heat: `【海洋热含量面板】当前 ${when}，${indexLine}。四个海区热含量读数：${this.displayHeatContent.map(item => `${item.name} ${item.label}`).join('、')}。请解读次表层热含量的东西梯度意味着什么（Kelvin 波 / 暖水体积输送），以及它对表面距平的先导意义。`,
+        signals: `【关键气候信号面板】当前 ${when}，${indexLine}。最新信号：${this.displaySignals.map(item => `${item.time} ${item.title}（${item.detail}）`).join('；')}。请综合这些信号判断 ENSO 演变的短期动量，并说明哪些信号可信度更高、哪些需要继续观察。`,
+        probability: `【ENSO 状态概率面板（IRI 多模式展望）】当前 ${when}，${indexLine}。未来各季节三类状态概率为：${this.probabilityOutlook.labels.map((label, i) => `${label} 厄尔尼诺 ${this.probabilityOutlook.elNino[i]}% / 中性 ${this.probabilityOutlook.neutral[i]}% / 拉尼娜 ${this.probabilityOutlook.laNina[i]}%`).join('；')}。请解读概率分布的重心与不确定性，说明何时越过判定阈值。`,
+        index: `【Niño3.4 指数趋势面板】当前 ${when}，${indexLine}，时间游标 ${this.currentIndexSafe + 1}/${this.activePeriods.length}（当前时次 ${this.activePeriod}）。请解读指数近期走势与 ±0.5℃ 阈值线的关系，判断位相处于发展、峰值还是衰减阶段。`,
+        impact: `【区域影响信号面板】当前 ${when}，${indexLine}。遥相关影响读数：${this.displayRiskLevels.map(item => `${item.name} ${item.label}（强度 ${item.value}%）`).join('；')}。请解释这些区域响应与当前 ENSO 位相的物理联系，并提示需要注意的气候风险窗口。`
+      }
+      const prompt = prompts[panel] || prompts.phase
+      openAiChat({ prompt })
     },
     // ---- A14 · 地图内嵌回放桥接 ----
     seekReplay(index) {
@@ -1216,8 +1266,8 @@ export default {
 .boot-bar{margin-top:16px;height:2px;overflow:hidden;background:rgba(28,70,93,.9)}
 .boot-bar i{display:block;height:100%;background:linear-gradient(90deg,#4fd8d0,#ffc477);transition:width .18s linear}
 @keyframes bootLineIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
-.enso-screen.boot-hidden .screen-header,.enso-screen.boot-hidden .history-control,.enso-screen.boot-hidden .threshold-alert,.enso-screen.boot-hidden .kpi-strip,.enso-screen.boot-hidden .screen-body,.enso-screen.boot-hidden .time-control,.enso-screen.boot-hidden .module-workbench{opacity:0;transform:translateY(8px)}
-.screen-header,.history-control,.threshold-alert,.kpi-strip,.screen-body,.time-control,.module-workbench{transition:opacity .5s ease,transform .5s ease}
+.enso-screen.boot-hidden .screen-header,.enso-screen.boot-hidden .history-control,.enso-screen.boot-hidden .threshold-alert,.enso-screen.boot-hidden .kpi-strip,.enso-screen.boot-hidden .pipeline-strip,.enso-screen.boot-hidden .screen-body,.enso-screen.boot-hidden .time-control,.enso-screen.boot-hidden .module-workbench{opacity:0;transform:translateY(8px)}
+.screen-header,.history-control,.threshold-alert,.kpi-strip,.pipeline-strip,.screen-body,.time-control,.module-workbench{transition:opacity .5s ease,transform .5s ease}
 
 /* ---- B2 · 全局 HUD 框架 ---- */
 .hud-frame{position:fixed;inset:0;z-index:30;pointer-events:none}
@@ -1256,4 +1306,25 @@ export default {
 .timeline-phase-band span{height:100%}
 .timeline-event-mark{position:absolute;top:-3px;width:5px;height:5px;background:#ffd79a;box-shadow:0 0 6px rgba(255,206,132,.9);transform:translateX(-50%) rotate(45deg)}
 @media(max-width:620px){.threshold-alert{gap:7px;padding:6px 9px}.alert-copy small{display:none}}
+
+/* ---- B4 · 数据流水线 ---- */
+.pipeline-strip{position:relative;display:flex;align-items:center;flex:0 0 40px;gap:0;padding:0 14px;border:1px solid rgba(58,134,161,.28);background:linear-gradient(100deg,rgba(8,38,56,.82),rgba(6,28,44,.68));overflow:hidden}
+.pipeline-strip:before{position:absolute;inset:0;content:"";background:linear-gradient(90deg,rgba(70,190,210,.05) 1px,transparent 1px);background-size:42px 100%;pointer-events:none}
+.pipeline-node{position:relative;z-index:1;display:flex;flex:1;align-items:center;gap:9px;min-width:0;color:#6f8ea0;transition:color .3s}
+.pipeline-node:not(:first-child){padding-left:18px}
+.pipeline-node:not(:last-child):after{position:absolute;right:-1px;top:50%;width:36px;height:1px;content:"";background:linear-gradient(90deg,rgba(90,190,210,.4),rgba(90,190,210,.08))}
+.node-dot{display:grid;width:24px;height:24px;flex:0 0 24px;place-items:center;border:1px solid rgba(80,164,190,.28);border-radius:50%;background:rgba(14,66,88,.4);font-size:12px;transition:all .3s}
+.node-copy{min-width:0}
+.node-copy b{display:block;font-size:9px;letter-spacing:1.2px;font-weight:600}
+.node-copy small{display:block;margin-top:1px;color:#64808f;font-size:8px;white-space:nowrap}
+.pipeline-node.active{color:#8ef0e6}
+.pipeline-node.active .node-dot{border-color:rgba(110,230,225,.75);color:#aef7ef;background:rgba(28,124,138,.5);box-shadow:0 0 14px rgba(62,213,204,.3)}
+.pipeline-node.active .node-copy small{color:#7fc6c2}
+.pipeline-flow{position:absolute;top:50%;left:14px;right:14px;height:1px;overflow:hidden;pointer-events:none}
+.pipeline-flow:after{position:absolute;top:0;left:0;width:70px;height:1px;content:"";background:linear-gradient(90deg,transparent,#5fe6da,transparent);animation:pipelineRun 4.2s linear infinite}
+@keyframes pipelineRun{0%{transform:translateX(-70px)}100%{transform:translateX(920px)}}
+.panel-ai{display:grid;flex:0 0 22px;width:22px;height:22px;place-items:center;margin-left:6px;border:1px solid rgba(83,162,181,.28);border-radius:4px;color:#8fb7c5;background:rgba(14,65,84,.2);font-size:11px;cursor:pointer;transition:all .2s}
+.panel-ai:hover{color:#d9f8f5;border-color:rgba(67,205,216,.55);background:rgba(20,95,110,.5)}
+@media(max-height:760px) and (min-width:901px){.pipeline-strip{flex-basis:34px}}
+@media(max-width:900px){.pipeline-strip{display:none}.panel-ai{width:20px;height:20px;font-size:10px}}
 </style>

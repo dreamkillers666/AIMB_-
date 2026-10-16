@@ -33,10 +33,12 @@
     </div>
     <div ref="ninoLabel" class="globe-region-label" aria-live="polite">
       <span class="globe-region-kicker">ENSO 指数定义区域</span>
-      <strong>Niño3.4 指数参考区</strong>
-      <span>赤道中东太平洋</span>
-      <small>5°N–5°S · 170°W–120°W</small>
+      <strong>{{ regionInfo.label }} 指数参考区</strong>
+      <span>{{ regionInfo.desc }}</span>
+      <small>{{ regionInfo.range }}</small>
     </div>
+    <!-- 2D 地图落定的点位探针：投影到球面同步显示 -->
+    <div ref="pinLayer" class="globe-pin-layer" aria-hidden="true"></div>
     <div v-if="rendererError" class="globe-error" role="status">
       3D 场景不可用，已切换到二维地图
     </div>
@@ -84,7 +86,11 @@ export default {
     layer: { type: String, default: 'wind' },
     layout: { type: String, default: 'showcase' },
     // 回放/历史模式下由父组件置 true：自动隐藏 Niño3.4 参考区（卡片 + 球面标注）
-    regionSuppressed: { type: Boolean, default: false }
+    regionSuppressed: { type: Boolean, default: false },
+    // 2D 地图落定的点位探针：[{ id, lat, lon, label }]
+    pins: { type: Array, default: () => [] },
+    // 当前 ENSO 参考区（A6 分区切换器）：{ key, label, desc, range, glowLon, glowLat, glowScale }
+    region: { type: Object, default: null }
   },
   data() {
     return { rendererError: '', regionVisible: true };
@@ -92,6 +98,16 @@ export default {
   computed: {
     regionShown() {
       return this.regionVisible && !this.regionSuppressed;
+    },
+    regionInfo() {
+      return this.region || {
+        label: 'Niño3.4',
+        desc: '赤道中东部太平洋',
+        range: '5°N–5°S · 170°W–120°W',
+        glowLon: 215,
+        glowLat: 0,
+        glowScale: 1
+      };
     }
   },
   watch: {
@@ -112,6 +128,15 @@ export default {
     },
     regionSuppressed() {
       this.applyRegionVisibility();
+    },
+    region() {
+      this.applyRegionFocus();
+    },
+    pins: {
+      deep: false,
+      handler() {
+        this.rebuildPinMarkers();
+      }
     }
   },
   mounted() {
@@ -300,6 +325,8 @@ export default {
         this.refreshWind();
         this.applyLayer();
         this.applyRegionVisibility();
+        if (this.region) this.applyRegionFocus();
+        this.rebuildPinMarkers();
         this.renderFrame(performance.now());
       } catch (error) {
         this.rendererError = error && error.message ? error.message : 'WebGL unavailable';
@@ -872,6 +899,7 @@ export default {
         state.orbitAccent.rotation.y -= delta * 0.012;
       }
       this.updateRegionLabel();
+      this.updatePinMarkers();
       state.renderer.render(state.scene, state.camera);
     },
 
@@ -911,6 +939,76 @@ export default {
         : 'translate(20px, -50%)';
       label.style.visibility = 'visible';
       label.style.opacity = '1';
+    },
+
+    // A6 · 分区切换：移动球面参考区光斑、光环与标签锚点
+    applyRegionFocus() {
+      const state = this._three;
+      if (!state) return;
+      const info = this.regionInfo;
+      const glow = toSpherePoint(info.glowLon, info.glowLat, RADIUS + 0.052);
+      const halo = toSpherePoint(info.glowLon, info.glowLat, RADIUS + 0.063);
+      if (state.ninoGlow) state.ninoGlow.position.copy(glow);
+      if (state.ninoHalo) {
+        state.ninoHalo.position.copy(halo);
+        state.ninoHalo.lookAt(halo.clone().multiplyScalar(2));
+      }
+      if (state.ninoGlow && info.glowScale) state.ninoGlow.scale.setScalar(info.glowScale);
+      if (state.ninoLabelAnchor) state.ninoLabelAnchor.copy(toSpherePoint(info.glowLon + 20, info.glowLat, RADIUS + 0.035));
+    },
+
+    // 2D 钉子 → 3D 球面标记：原生 DOM 管理，避免逐帧触发 Vue 重渲染
+    rebuildPinMarkers() {
+      const layer = this.$refs.pinLayer;
+      if (!layer) return;
+      layer.innerHTML = '';
+      this._pinEls = [];
+      const state = this._three;
+      this.pins.forEach((pin) => {
+        const el = document.createElement('div');
+        el.className = 'globe-pin-marker';
+        el.innerHTML = `<span class="pin-dot"></span><span class="pin-text">${pin.label}</span>`;
+        layer.appendChild(el);
+        this._pinEls.push({
+          el,
+          anchor: toSpherePoint(((pin.lon % 360) + 540) % 360 - 180, Math.max(-89, Math.min(89, pin.lat)), RADIUS + 0.012)
+        });
+      });
+      if (state) {
+        state.pinWorld = state.pinWorld || new THREE.Vector3();
+        state.pinScreen = state.pinScreen || new THREE.Vector3();
+        state.pinNormal = state.pinNormal || new THREE.Vector3();
+        state.pinCameraDir = state.pinCameraDir || new THREE.Vector3();
+        state.pinGlobeCenter = state.pinGlobeCenter || new THREE.Vector3();
+      }
+      this.updatePinMarkers();
+    },
+
+    // 每帧把钉子投影到屏幕坐标，转到背面时隐藏
+    updatePinMarkers() {
+      const state = this._three;
+      const els = this._pinEls;
+      if (!state || !els || !els.length) return;
+      const stage = this.$refs.stage;
+      if (!stage) return;
+      state.group.updateMatrixWorld(true);
+      state.pinGlobeCenter.setFromMatrixPosition(state.group.matrixWorld);
+      state.pinCameraDir.subVectors(state.camera.position, state.pinGlobeCenter);
+      els.forEach((item) => {
+        state.pinWorld.copy(item.anchor).applyMatrix4(state.group.matrixWorld);
+        state.pinNormal.subVectors(state.pinWorld, state.pinGlobeCenter);
+        const visible = state.pinNormal.dot(state.pinCameraDir) > 0;
+        if (!visible) {
+          item.el.style.display = 'none';
+          return;
+        }
+        state.pinScreen.copy(state.pinWorld).project(state.camera);
+        const x = ((state.pinScreen.x + 1) / 2) * stage.clientWidth;
+        const y = ((1 - state.pinScreen.y) / 2) * stage.clientHeight;
+        item.el.style.display = '';
+        item.el.style.left = `${x}px`;
+        item.el.style.top = `${y}px`;
+      });
     },
 
     updateParticles(delta) {
@@ -1159,5 +1257,43 @@ export default {
     min-width: 118px;
     max-width: min(152px, calc(100vw - 32px));
   }
+}
+
+/* ---- 2D 点位探针的球面投影标记 ---- */
+.globe-pin-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.globe-pin-marker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transform: translate(-50%, -50%);
+}
+
+.globe-pin-marker .pin-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border: 1.5px solid #fff3d8;
+  border-radius: 50%;
+  background: #ffce7a;
+  box-shadow: 0 0 10px rgba(255, 200, 120, .85);
+}
+
+.globe-pin-marker .pin-text {
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 206, 122, .5);
+  border-radius: 3px;
+  background: rgba(6, 22, 30, .82);
+  color: #ffd694;
+  font-size: 9px;
+  line-height: 1.3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 </style>
