@@ -4,8 +4,8 @@
       <button
         class="globe-control"
         type="button"
-        title="定位 Niño3.4 海区"
-        aria-label="定位 Niño3.4 海区"
+        :title="`定位 ${regionInfo.label} 海区`"
+        :aria-label="`定位 ${regionInfo.label} 海区`"
         @click.stop="focusRegion"
       >
         <i class="el-icon-location-outline"></i>
@@ -37,7 +37,7 @@
       <span>{{ regionInfo.desc }}</span>
       <small>{{ regionInfo.range }}</small>
     </div>
-    <!-- 2D 地图落定的点位探针：投影到球面同步显示 -->
+    <!-- 2D 地图落定的点位探针 + 冷暖异常热点：投影到球面同步显示 -->
     <div ref="pinLayer" class="globe-pin-layer" aria-hidden="true"></div>
     <div v-if="rendererError" class="globe-error" role="status">
       3D 场景不可用，已切换到二维地图
@@ -50,6 +50,7 @@ import * as THREE from 'three';
 import earthMapUrl from '../assets/earth-blue-marble.jpg';
 import waterMaskUrl from '../assets/earth-water.png';
 import { ensoFieldColor } from '../data/ensoColorScale';
+import { marchingSquares } from '../data/ensoAnalysis';
 
 const RADIUS = 2;
 const PARTICLE_COUNT = 3600;
@@ -90,7 +91,14 @@ export default {
     // 2D 地图落定的点位探针：[{ id, lat, lon, label }]
     pins: { type: Array, default: () => [] },
     // 当前 ENSO 参考区（A6 分区切换器）：{ key, label, desc, range, glowLon, glowLat, glowScale }
-    region: { type: Object, default: null }
+    region: { type: Object, default: null },
+    // A4 · 冷暖异常热点（3D 球面标记）：[{ id, lat, lon, text, tone }]
+    hotspots: { type: Array, default: () => [] },
+    // A5 · 距平等值线（3D 球面 LineSegments）
+    contourOn: { type: Boolean, default: false },
+    // A8 · 纬向剖面切割线（3D 球面纬线）
+    profileOn: { type: Boolean, default: false },
+    profileLat: { type: Number, default: 0 }
   },
   data() {
     return { rendererError: '', regionVisible: true };
@@ -116,9 +124,11 @@ export default {
     },
     sstData() {
       this.refreshSurfaceTextures();
+      if (this.contourOn) this.rebuildContourLines();
     },
     sstMode() {
       this.refreshSurfaceTextures();
+      if (this.contourOn) this.rebuildContourLines();
     },
     layer() {
       this.applyLayer();
@@ -137,6 +147,21 @@ export default {
       handler() {
         this.rebuildPinMarkers();
       }
+    },
+    hotspots: {
+      deep: false,
+      handler() {
+        this.rebuildHotspotMarkers();
+      }
+    },
+    contourOn() {
+      this.rebuildContourLines();
+    },
+    profileOn() {
+      this.rebuildProfileLine();
+    },
+    profileLat() {
+      this.rebuildProfileLine();
     }
   },
   mounted() {
@@ -327,6 +352,9 @@ export default {
         this.applyRegionVisibility();
         if (this.region) this.applyRegionFocus();
         this.rebuildPinMarkers();
+        this.rebuildHotspotMarkers();
+        this.rebuildContourLines();
+        this.rebuildProfileLine();
         this.renderFrame(performance.now());
       } catch (error) {
         this.rendererError = error && error.message ? error.message : 'WebGL unavailable';
@@ -886,7 +914,8 @@ export default {
       const delta = state.lastFrame ? Math.min((time - state.lastFrame) / 1000, 0.04) : 0;
       state.lastFrame = time;
       const motionEnabled = !state.reducedMotion;
-      if (motionEnabled && !state.drag) state.group.rotation.y += delta * 0.022;
+      // 有点位探针时暂停自转，避免钉子转到背面"消失"
+      if (motionEnabled && !state.drag && !this.pins.length) state.group.rotation.y += delta * 0.022;
       if (motionEnabled || state.firstWindFrame) this.updateParticles(state.firstWindFrame ? Math.max(delta, 0.016) : delta);
       state.firstWindFrame = false;
       if (motionEnabled) {
@@ -899,7 +928,7 @@ export default {
         state.orbitAccent.rotation.y -= delta * 0.012;
       }
       this.updateRegionLabel();
-      this.updatePinMarkers();
+      this.updateOverlays();
       state.renderer.render(state.scene, state.camera);
     },
 
@@ -974,6 +1003,12 @@ export default {
           anchor: toSpherePoint(((pin.lon % 360) + 540) % 360 - 180, Math.max(-89, Math.min(89, pin.lat)), RADIUS + 0.012)
         });
       });
+      // 有钉子时把球转到最新一颗钉子正面，避免"打了钉却看不到"
+      if (state && this.pins.length) {
+        const last = this.pins[this.pins.length - 1];
+        const lon = ((last.lon % 360) + 540) % 360 - 180;
+        state.group.rotation.set(0, Math.PI / 2 - (lon * Math.PI / 180), 0);
+      }
       if (state) {
         state.pinWorld = state.pinWorld || new THREE.Vector3();
         state.pinScreen = state.pinScreen || new THREE.Vector3();
@@ -981,34 +1016,120 @@ export default {
         state.pinCameraDir = state.pinCameraDir || new THREE.Vector3();
         state.pinGlobeCenter = state.pinGlobeCenter || new THREE.Vector3();
       }
-      this.updatePinMarkers();
+      this.updateOverlays();
     },
 
-    // 每帧把钉子投影到屏幕坐标，转到背面时隐藏
-    updatePinMarkers() {
+    // A4 · 冷暖异常热点 → 3D 球面发光标记
+    rebuildHotspotMarkers() {
+      const layer = this.$refs.pinLayer;
+      if (!layer) return;
+      if (this._hotspotEls) this._hotspotEls.forEach(item => item.el.remove());
+      this._hotspotEls = [];
+      this.hotspots.forEach((spot) => {
+        const el = document.createElement('div');
+        el.className = `globe-hotspot-marker ${spot.tone === 'cool' ? 'cool' : 'warm'}`;
+        el.innerHTML = `<span class="pin-dot"></span><span class="pin-text">${spot.text}</span>`;
+        layer.appendChild(el);
+        this._hotspotEls.push({
+          el,
+          anchor: toSpherePoint(((spot.lon % 360) + 540) % 360 - 180, Math.max(-89, Math.min(89, spot.lat)), RADIUS + 0.012)
+        });
+      });
+      this.updateOverlays();
+    },
+
+    // 每帧把钉子/热点投影到屏幕坐标，转到背面时隐藏
+    updateOverlays() {
       const state = this._three;
-      const els = this._pinEls;
-      if (!state || !els || !els.length) return;
+      const groups = [this._pinEls, this._hotspotEls];
+      if (!state || groups.every(list => !list || !list.length)) return;
       const stage = this.$refs.stage;
       if (!stage) return;
       state.group.updateMatrixWorld(true);
       state.pinGlobeCenter.setFromMatrixPosition(state.group.matrixWorld);
       state.pinCameraDir.subVectors(state.camera.position, state.pinGlobeCenter);
-      els.forEach((item) => {
-        state.pinWorld.copy(item.anchor).applyMatrix4(state.group.matrixWorld);
-        state.pinNormal.subVectors(state.pinWorld, state.pinGlobeCenter);
-        const visible = state.pinNormal.dot(state.pinCameraDir) > 0;
-        if (!visible) {
-          item.el.style.display = 'none';
-          return;
-        }
-        state.pinScreen.copy(state.pinWorld).project(state.camera);
-        const x = ((state.pinScreen.x + 1) / 2) * stage.clientWidth;
-        const y = ((1 - state.pinScreen.y) / 2) * stage.clientHeight;
-        item.el.style.display = '';
-        item.el.style.left = `${x}px`;
-        item.el.style.top = `${y}px`;
+      groups.forEach((els) => {
+        if (!els) return;
+        els.forEach((item) => {
+          state.pinWorld.copy(item.anchor).applyMatrix4(state.group.matrixWorld);
+          state.pinNormal.subVectors(state.pinWorld, state.pinGlobeCenter);
+          const visible = state.pinNormal.dot(state.pinCameraDir) > 0;
+          if (!visible) {
+            item.el.style.display = 'none';
+            return;
+          }
+          state.pinScreen.copy(state.pinWorld).project(state.camera);
+          const x = ((state.pinScreen.x + 1) / 2) * stage.clientWidth;
+          const y = ((1 - state.pinScreen.y) / 2) * stage.clientHeight;
+          item.el.style.display = '';
+          item.el.style.left = `${x}px`;
+          item.el.style.top = `${y}px`;
+        });
       });
+    },
+
+    // A5 · 距平等值线 → 球面 LineSegments（分暖/冷/零线三组）
+    rebuildContourLines() {
+      const state = this._three;
+      if (!state) return;
+      if (state.contourGroup) {
+        state.group.remove(state.contourGroup);
+        state.contourGroup = null;
+      }
+      if (!this.contourOn || !this.sstData) return;
+      const { header, data } = this.sstData;
+      const nx = Number(header.nx);
+      const ny = Number(header.ny);
+      const dy = -Math.abs(header.dy);
+      const anomaly = this.sstMode === 'anomaly';
+      const levels = anomaly ? [0, 0.5, 1, 1.5, -0.5, -1, -1.5] : [26, 27, 28, 29];
+      const groups = { warm: [], cool: [], zero: [] };
+      levels.forEach((iso) => {
+        const segments = marchingSquares(data, nx, ny, iso);
+        segments.forEach(seg => seg.forEach((pt) => {
+          const lon = header.lo1 + pt[0] * header.dx;
+          const lat = header.la1 + pt[1] * dy;
+          const key = anomaly ? (iso === 0 ? 'zero' : iso > 0 ? 'warm' : 'cool') : 'warm';
+          groups[key].push(toSpherePoint(lon, lat, RADIUS + 0.008));
+        }));
+      });
+      const contourGroup = new THREE.Group();
+      const material = key => new THREE.LineBasicMaterial({
+        color: key === 'zero' ? 0xd5e9ef : key === 'warm' ? 0xffab61 : 0x6fb7f5,
+        transparent: true,
+        opacity: 0.85
+      });
+      Object.keys(groups).forEach((key) => {
+        if (!groups[key].length) return;
+        const geometry = new THREE.BufferGeometry().setFromPoints(groups[key]);
+        contourGroup.add(new THREE.LineSegments(geometry, material(key)));
+      });
+      state.group.add(contourGroup);
+      state.contourGroup = contourGroup;
+    },
+
+    // A8 · 纬向剖面切割线 → 球面纬线圆
+    rebuildProfileLine() {
+      const state = this._three;
+      if (!state) return;
+      if (state.profileLine) {
+        state.group.remove(state.profileLine);
+        state.profileLine.geometry.dispose();
+        state.profileLine.material.dispose();
+        state.profileLine = null;
+      }
+      if (!this.profileOn) return;
+      const lat = Math.max(-89, Math.min(89, this.profileLat));
+      const points = [];
+      for (let lon = 0; lon <= 360; lon += 5) {
+        points.push(toSpherePoint(lon, lat, RADIUS + 0.01));
+      }
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+        color: 0xff8f6b, transparent: true, opacity: 0.95
+      }));
+      state.group.add(line);
+      state.profileLine = line;
     },
 
     updateParticles(delta) {
@@ -1089,7 +1210,9 @@ export default {
     focusRegion() {
       const state = this._three;
       if (!state) return;
-      state.group.rotation.set(0, Math.PI / 2 - (215 * Math.PI / 180), 0);
+      // A6 · 定位到当前选中的参考区，而不是固定的 Niño3.4
+      const lon = this.regionInfo.glowLon;
+      state.group.rotation.set(0, Math.PI / 2 - (lon * Math.PI / 180), 0);
       state.zoom = 4.55;
       state.camera.position.set(0, 0, state.zoom * state.mobileZoom);
     },
@@ -1295,5 +1418,49 @@ export default {
   line-height: 1.3;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* A4 · 热点球面标记 */
+.globe-hotspot-marker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transform: translate(-50%, -50%);
+}
+
+.globe-hotspot-marker .pin-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border: 1.5px solid rgba(255, 255, 255, .85);
+  border-radius: 50%;
+}
+
+.globe-hotspot-marker.warm .pin-dot {
+  background: #ff8b55;
+  box-shadow: 0 0 12px rgba(255, 130, 70, .95);
+}
+
+.globe-hotspot-marker.cool .pin-dot {
+  background: #5aa8f0;
+  box-shadow: 0 0 12px rgba(90, 168, 240, .95);
+}
+
+.globe-hotspot-marker .pin-text {
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 178, 110, .45);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: rgba(6, 20, 29, .92);
+  color: #ffd7ad;
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.globe-hotspot-marker.cool .pin-text {
+  border-color: rgba(120, 180, 240, .45);
+  color: #bfe0ff;
 }
 </style>

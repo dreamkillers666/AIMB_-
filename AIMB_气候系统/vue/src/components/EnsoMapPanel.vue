@@ -9,6 +9,10 @@
       :region-suppressed="hasHistoryField"
       :pins="globePins"
       :region="activeRegion"
+      :hotspots="hotspotsOn ? hotspotData : []"
+      :contour-on="contoursOn"
+      :profile-on="profileOn"
+      :profile-lat="profileLat"
       layout="center"
       @unavailable="handleGlobeUnavailable"
     />
@@ -100,8 +104,8 @@
       <button type="button" :disabled="!hasSst" :class="{ active: hotspotsOn }" title="冷暖异常热点检测" @click="toggleHotspots"><i class="el-icon-place"></i>热点</button>
       <button type="button" :disabled="!hasSst" :class="{ active: contoursOn }" title="距平等值线" @click="toggleContours"><i class="el-icon-s-operation"></i>等值线</button>
       <button type="button" :disabled="!hasSst" :class="{ active: profileOn }" title="纬向剖面抽屉" @click="toggleProfile"><i class="el-icon-data-analysis"></i>剖面</button>
-      <button type="button" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i>框选</button>
-      <button v-if="canCompare" type="button" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i>对比</button>
+      <button v-if="displayMode === '2d'" type="button" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i>框选</button>
+      <button v-if="displayMode === '2d' && canCompare" type="button" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i>对比</button>
       <button type="button" class="maximize-button" :aria-label="maximized ? '还原地图大小' : '放大地图'" :title="maximized ? '还原地图大小' : '放大地图'" @click="$emit('toggle-maximize')"><i :class="maximized ? 'el-icon-close' : 'el-icon-full-screen'"></i><span>{{ maximized ? '还原' : '放大' }}</span></button>
     </div>
 
@@ -120,8 +124,8 @@
       <button type="button" class="roi-ai" @click="askRoiAi"><i class="el-icon-cpu"></i>AI 解读该区域</button>
     </div>
 
-    <!-- A8 · 纬向剖面抽屉 -->
-    <div v-if="profileOn && displayMode === '2d'" class="profile-drawer" role="region" aria-label="纬向剖面">
+    <!-- A8 · 纬向剖面抽屉（2D/3D 通用） -->
+    <div v-if="profileOn" class="profile-drawer" role="region" aria-label="纬向剖面">
       <div class="profile-head">
         <span><i></i>纬向剖面 · {{ profileLat }}° 纬线{{ sstMode === 'anomaly' ? '（距平）' : '（海温）' }}</span>
         <div class="profile-lats">
@@ -170,6 +174,7 @@ import 'leaflet/dist/leaflet.css'
 import EnsoGlobe from './EnsoGlobe.vue'
 import presetSst from '../data/presetSst.json'
 import { ensoFieldColor, SST_COLOR_GRADIENT } from '../data/ensoColorScale'
+import { NINO_REGIONS, marchingSquares } from '../data/ensoAnalysis'
 import { openAiChat } from '../utils/aiBus'
 import blueMarbleUrl from '../assets/earth-blue-marble.jpg'
 import waterMaskUrl from '../assets/earth-water.png'
@@ -180,55 +185,6 @@ require('leaflet-velocity')
 // A2 · 钉子位置跨地图实例保留：切换实时/历史模式时 EnsoMapPanel 会因 :key
 // 变化而重建，这里用模块级缓存把钉子位置带回去（时序曲线重新累积）
 let pinLocationCache = []
-
-// A6 · Niño 指数分区定义（经度东正；west > east 表示跨 180° 日界线）
-const NINO_REGIONS = {
-  nino12: { key: 'nino12', label: 'Niño1+2', desc: '南美沿岸', range: '0–10°S · 90°W–80°W', south: -10, north: 0, west: -90, east: -80, glowLon: -85, glowLat: -5, glowScale: 0.7 },
-  nino3: { key: 'nino3', label: 'Niño3', desc: '赤道东太平洋', range: '5°N–5°S · 150°W–90°W', south: -5, north: 5, west: -150, east: -90, glowLon: -120, glowLat: 0, glowScale: 0.85 },
-  nino34: { key: 'nino34', label: 'Niño3.4', desc: '赤道中东部太平洋', range: '5°N–5°S · 170°W–120°W', south: -5, north: 5, west: -170, east: -120, glowLon: -145, glowLat: 0, glowScale: 1 },
-  nino4: { key: 'nino4', label: 'Niño4', desc: '赤道西太平洋', range: '5°N–5°S · 160°E–150°W', south: -5, north: 5, west: 160, east: -150, glowLon: 175, glowLat: 0, glowScale: 0.85 }
-}
-
-// A5 · marching squares：从格点场提取 iso 等值线段（格点坐标，浮点）
-const marchingSquares = (values, nx, ny, iso) => {
-  const segments = []
-  if (!values || nx < 2 || ny < 2) return segments
-  const lerp = (a, b) => (iso - a) / (b - a)
-  for (let j = 0; j < ny - 1; j += 1) {
-    for (let i = 0; i < nx - 1; i += 1) {
-      const tl = values[j * nx + i]
-      const tr = values[j * nx + i + 1]
-      const br = values[(j + 1) * nx + i + 1]
-      const bl = values[(j + 1) * nx + i]
-      if (![tl, tr, br, bl].every(Number.isFinite)) continue
-      let code = 0
-      if (tl > iso) code |= 8
-      if (tr > iso) code |= 4
-      if (br > iso) code |= 2
-      if (bl > iso) code |= 1
-      if (code === 0 || code === 15) continue
-      const top = [i + lerp(tl, tr), j]
-      const right = [i + 1, j + lerp(tr, br)]
-      const bottom = [i + lerp(bl, br), j + 1]
-      const left = [i, j + lerp(tl, bl)]
-      const table = {
-        1: [left, bottom], 2: [bottom, right], 3: [left, right], 4: [top, right],
-        5: [left, top, bottom, right], 6: [top, bottom], 7: [left, top],
-        8: [left, top], 9: [top, bottom], 10: [left, bottom, top, right],
-        11: [top, right], 12: [left, right], 13: [bottom, right], 14: [left, bottom]
-      }
-      const points = table[code]
-      if (!points) continue
-      if (points.length === 4) {
-        segments.push([points[0], points[1]])
-        segments.push([points[2], points[3]])
-      } else {
-        segments.push([points[0], points[1]])
-      }
-    }
-  }
-  return segments
-}
 
 // Reuse the hero's smoothed raster overlay implementation: bilinear sampling,
 // cached canvas rendering and low-cost panning between zoom events.
@@ -506,6 +462,8 @@ const SstOverlayLayer = L.Layer.extend({
     if (!map) { this._offscreen = null; return; }
     const zoom = effZoom !== undefined ? effZoom : map.getZoom();
     const size = map.getSize();
+    // 容器尚未布局（尺寸为 0）时跳过，等下一次 resize/moveend 再画
+    if (!size.x || !size.y) { this._offscreen = null; return; }
     const margin = Math.round(Math.max(size.x, size.y) * 0.35);
     const ow = size.x + margin * 2;
     const oh = size.y + margin * 2;
@@ -705,7 +663,8 @@ export default {
       profilePoints: [],
       compareOn: false,
       compareSplitRatio: 0.5,
-      roiStats: null
+      roiStats: null,
+      hotspotData: []
     }
   },
   computed: {
@@ -845,14 +804,24 @@ export default {
       })
       this.refreshPinSeries()
     },
-    // A6 · 分区切换：重建 2D 参考区，3D 由 region prop 驱动
-    regionKey() {
-      this.rebuildRegionGroup()
-    },
-    // 场更新：统一刷新热点 / 等值线 / 剖面 / 区域卡 / 框选统计
-    sstData() {
-      this.refreshAnalysisLayers()
-    },
+      // A6 · Niño 分区切换：重建 2D 参考区，3D 由 region prop 驱动；
+      // 2D 视图同时飞到所选分区
+      regionKey() {
+        this.rebuildRegionGroup()
+        if (this.map && this.displayMode === '2d') {
+          const region = this.activeRegion
+          const west = region.west
+          const east = region.east <= region.west ? region.east + 360 : region.east
+          this.map.flyToBounds(
+            [[region.south - 6, west - 10], [region.north + 6, east + 10]],
+            { padding: [24, 24], duration: 0.9, maxZoom: 2.5 }
+          )
+        }
+      },
+      // 场更新：统一刷新热点 / 等值线 / 剖面 / 区域卡 / 框选统计
+      sstData() {
+        this.refreshAnalysisLayers()
+      },
     // A7 · 参考场变化
     compareField() {
       if (this.compareOn && this.compareLayer) {
@@ -1510,10 +1479,11 @@ export default {
     clearHotspots() {
       if (this.hotspotGroup && this.map) this.map.removeLayer(this.hotspotGroup)
       this.hotspotGroup = null
+      this.hotspotData = []
     },
-    rebuildHotspots() {
-      this.clearHotspots()
-      if (!this.hotspotsOn || !this.sstData || !this.map) return
+    // 热点检测（纯数据，2D/3D 共用）
+    computeHotspotData() {
+      if (!this.sstData) { this.hotspotData = []; return [] }
       const { header, data } = this.sstData
       const nx = Number(header.nx)
       const ny = Number(header.ny)
@@ -1568,21 +1538,28 @@ export default {
         const far = picked.every(p => Math.abs(((p.lon - lon + 540) % 360) - 180) > 25 || Math.abs(p.lat - lat) > 12)
         if (far) picked.push({ lon, lat, dev: candidate.dev, value: data[candidate.j * nx + candidate.i] })
       })
-      if (!picked.length) return
-      const layers = picked.map((spot) => {
+      this.hotspotData = picked.map((spot) => {
         const warm = spot.dev > 0
         const text = anomaly
           ? `${warm ? '暖核' : '冷核'} ${warm ? '+' : '−'}${Math.abs(spot.dev).toFixed(2)}℃`
           : `${warm ? '偏暖' : '偏冷'} ${warm ? '+' : '−'}${Math.abs(spot.dev).toFixed(1)}℃`
-        return L.marker([spot.lat, spot.lon], {
-          pane: 'analysisPane', interactive: false, keyboard: false,
-          icon: L.divIcon({
-            className: 'hotspot-icon',
-            html: `<div class="hotspot-marker ${warm ? 'warm' : 'cool'}"><span class="hotspot-dot"></span><span class="hotspot-text">${text}</span></div>`,
-            iconSize: [0, 0]
-          })
-        })
+        return { id: `hs-${spot.i}-${spot.j}`, lat: spot.lat, lon: spot.lon, text, tone: warm ? 'warm' : 'cool' }
       })
+      return picked
+    },
+    rebuildHotspots() {
+      this.clearHotspots()
+      if (!this.hotspotsOn || !this.sstData) return
+      const picked = this.computeHotspotData()
+      if (!this.map || !picked.length) return
+      const layers = this.hotspotData.map(spot => L.marker([spot.lat, spot.lon], {
+        pane: 'analysisPane', interactive: false, keyboard: false,
+        icon: L.divIcon({
+          className: 'hotspot-icon',
+          html: `<div class="hotspot-marker ${spot.tone}"><span class="hotspot-dot"></span><span class="hotspot-text">${spot.text}</span></div>`,
+          iconSize: [0, 0]
+        })
+      }))
       this.hotspotGroup = L.layerGroup(layers).addTo(this.map)
     },
 
@@ -1835,7 +1812,7 @@ export default {
 <style scoped>
 .enso-map-panel{position:relative;isolation:isolate;display:block;width:100%;height:100%;min-height:320px;overflow:hidden;border:1px solid rgba(55,143,171,.34);border-radius:7px;background:radial-gradient(ellipse at 50% 48%,rgba(16,91,117,.44),transparent 62%),#061a2a;color:#dff8ff}
 .map-2d,.map-vignette{position:absolute;inset:0}.map-2d{z-index:0;background:#061a2a}.map-vignette{z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 48%,rgba(2,12,24,.46) 100%),linear-gradient(180deg,rgba(3,16,28,.14),transparent 24%,transparent 77%,rgba(3,16,28,.35))}
-.map-toolbar{position:absolute;z-index:5;top:12px;display:flex;gap:4px;padding:4px;border:1px solid rgba(64,164,192,.3);border-radius:7px;background:rgba(3,20,34,.76);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(9px)}.map-toolbar-left{left:12px}.map-toolbar-right{right:12px}.map-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:0 9px;border:1px solid transparent;border-radius:4px;color:#96b6c4;background:transparent;font:600 10px/1 inherit;cursor:pointer;transition:color .2s,border-color .2s,background .2s}.map-toolbar button:hover,.map-toolbar button.active{border-color:rgba(64,211,220,.34);color:#c7fbf6;background:rgba(17,110,128,.32)}.map-toolbar button:disabled{opacity:.36;cursor:not-allowed}.map-toolbar .maximize-button{margin-left:3px;padding:0 10px;border-left:1px solid rgba(105,162,182,.23);border-radius:0;color:#dcf8ff}.map-toolbar .maximize-button:hover{color:#fff;background:rgba(25,117,147,.34)}
+.map-toolbar{position:absolute;z-index:5;top:12px;display:flex;gap:4px;padding:4px;border:1px solid rgba(64,164,192,.3);border-radius:7px;background:rgba(3,20,34,.76);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(9px);max-width:calc(50% - 16px)}.map-toolbar-left{left:12px}.map-toolbar-right{right:12px;flex-wrap:wrap;justify-content:flex-end}.map-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:29px;padding:0 9px;border:1px solid transparent;border-radius:4px;color:#96b6c4;background:transparent;font:600 10px/1 inherit;cursor:pointer;transition:color .2s,border-color .2s,background .2s}.map-toolbar button:hover,.map-toolbar button.active{border-color:rgba(64,211,220,.34);color:#c7fbf6;background:rgba(17,110,128,.32)}.map-toolbar button:disabled{opacity:.36;cursor:not-allowed}.map-toolbar .maximize-button{margin-left:3px;padding:0 10px;border-left:1px solid rgba(105,162,182,.23);border-radius:0;color:#dcf8ff}.map-toolbar .maximize-button:hover{color:#fff;background:rgba(25,117,147,.34)}
 .sst-legend{position:absolute;z-index:4;right:15px;bottom:37px;width:min(250px,38%);padding:8px 10px;border:1px solid rgba(91,170,191,.28);border-radius:5px;background:rgba(3,20,34,.76);backdrop-filter:blur(8px)}.sst-legend-bar{height:7px;border-radius:5px}.sst-legend-labels{display:flex;justify-content:space-between;margin-top:5px;color:#a8c2cd;font-size:9px;font-variant-numeric:tabular-nums}.data-badge{position:absolute;z-index:4;left:14px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid rgba(67,151,176,.25);border-radius:4px;color:#8faebb;background:rgba(3,20,34,.74);font-size:9px;backdrop-filter:blur(8px)}.data-badge i{width:6px;height:6px;border-radius:50%;background:#5adcc8;box-shadow:0 0 8px #5adcc8}.data-badge.is-live i{background:#67f3b5;box-shadow:0 0 8px #67f3b5}
 .enso-map-panel>>>.enso-globe-stage{background:radial-gradient(ellipse at center,rgba(14,70,95,.16),transparent 60%),#061a2a}.enso-map-panel>>>.globe-controls{right:15px;bottom:17px}.enso-map-panel>>>.globe-control{width:32px;height:32px;border-radius:5px;background:rgba(4,22,37,.83)}.enso-map-panel>>>.globe-region-label{z-index:3}.enso-map-panel>>>.leaflet-container{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:#071a2a}.enso-map-panel>>>.enso-basemap-img{filter:saturate(.8) brightness(.85) contrast(1.05)}.enso-map-panel>>>.leaflet-control-attribution{display:none}
 .enso-map-panel>>>.nino34-icon{width:0;height:0}.enso-map-panel>>>.nino34-card{position:absolute;left:10px;top:0;transform:translateY(-50%);display:flex;flex-direction:column;gap:1px;padding:5px 8px 6px;border:1px solid rgba(255,214,130,.82);border-left:3px solid #ffd36a;background:rgba(6,20,29,.92);box-shadow:0 6px 18px rgba(0,0,0,.44);white-space:nowrap}.enso-map-panel>>>.nino34-title{color:#fff4d1;font-size:11px;line-height:1.25;font-weight:600}.enso-map-panel>>>.nino34-card small{color:#afc5cb;font-size:9px;line-height:1.3}
@@ -1905,9 +1882,11 @@ export default {
 @media(max-width:700px){.map-replay{gap:5px;padding:4px 7px}.replay-progress{width:70px}.replay-readout{display:none}}
 
 /* ---- A6 · 分区下拉 ---- */
-.region-select{height:29px;margin-left:4px;padding:0 4px;border:1px solid rgba(64,164,192,.3);border-radius:4px;color:#c7fbf6;background:rgba(3,20,34,.8);font:600 10px/1 inherit;outline:0;cursor:pointer}
+.region-select{height:29px;margin-left:4px;padding:0 3px;min-width:0;flex:0 1 auto;max-width:168px;border:1px solid rgba(64,164,192,.3);border-radius:4px;color:#c7fbf6;background:rgba(3,20,34,.8);font:600 10px/1 inherit;outline:0;cursor:pointer;text-overflow:ellipsis}
 .region-select option{color:#dff8ff;background:#0a2436}
 .toolbar-divider{width:1px;align-self:stretch;margin:2px 3px;background:rgba(105,162,182,.23)}
+@media(max-width:900px){.region-select{max-width:118px;font-size:9px}}
+@media(max-width:700px){.region-select{max-width:92px;height:25px;font-size:8px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}

@@ -104,15 +104,6 @@
       </article>
     </section>
 
-    <!-- B4 · 数据流水线：观测 → 模型 → 验证 → 服务 -->
-    <div class="pipeline-strip" aria-label="平台数据流水线">
-      <span class="pipeline-flow" aria-hidden="true"></span>
-      <div v-for="(node, index) in pipelineNodes" :key="node.en" class="pipeline-node" :class="{ active: pipelineActive === index }">
-        <span class="node-dot"><i :class="node.icon"></i></span>
-        <div class="node-copy"><b>{{ node.en }}</b><small>{{ node.zh }}</small></div>
-      </div>
-    </div>
-
     <main class="screen-body">
       <aside class="side-column left-column">
         <section class="panel-card phase-card">
@@ -310,15 +301,6 @@ export default {
       // B3 · KPI 脉冲
       pulseKey: '',
       pulseTimer: null,
-      // B4 · 数据流水线
-      pipelineActive: 0,
-      pipelineTimer: null,
-      pipelineNodes: [
-        { en: 'OBSERVE', zh: '数据接入', icon: 'el-icon-upload' },
-        { en: 'MODEL', zh: '模型推演', icon: 'el-icon-cpu' },
-        { en: 'VERIFY', zh: '可信验证', icon: 'el-icon-finished' },
-        { en: 'SERVE', zh: '决策服务', icon: 'el-icon-s-data' }
-      ],
       periods: ['2026 JJA', '2026 JAS', '2026 ASO', '2026 SON', '2026 OND', '2027 NDJ'],
       monitor: { nino34: '+0.8', oni: '+0.7', soi: '−0.4', status: '厄尔尼诺' },
       heatContent: [
@@ -783,9 +765,6 @@ export default {
     this.updateClock()
     this.clockTimer = setInterval(this.updateClock, 1000)
     this.runBootSequence()
-    this.pipelineTimer = setInterval(() => {
-      this.pipelineActive = (this.pipelineActive + 1) % this.pipelineNodes.length
-    }, 2200)
     this.$nextTick(() => {
       this.initCharts()
       window.addEventListener('resize', this.handleResize)
@@ -795,7 +774,6 @@ export default {
   beforeDestroy() {
     clearInterval(this.clockTimer)
     clearInterval(this.playTimer)
-    clearInterval(this.pipelineTimer)
     if (this.pulseTimer) clearTimeout(this.pulseTimer)
     this.bootTimers.forEach(timer => clearTimeout(timer))
     this.bootTimers = []
@@ -1266,8 +1244,8 @@ export default {
 .boot-bar{margin-top:16px;height:2px;overflow:hidden;background:rgba(28,70,93,.9)}
 .boot-bar i{display:block;height:100%;background:linear-gradient(90deg,#4fd8d0,#ffc477);transition:width .18s linear}
 @keyframes bootLineIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
-.enso-screen.boot-hidden .screen-header,.enso-screen.boot-hidden .history-control,.enso-screen.boot-hidden .threshold-alert,.enso-screen.boot-hidden .kpi-strip,.enso-screen.boot-hidden .pipeline-strip,.enso-screen.boot-hidden .screen-body,.enso-screen.boot-hidden .time-control,.enso-screen.boot-hidden .module-workbench{opacity:0;transform:translateY(8px)}
-.screen-header,.history-control,.threshold-alert,.kpi-strip,.pipeline-strip,.screen-body,.time-control,.module-workbench{transition:opacity .5s ease,transform .5s ease}
+.enso-screen.boot-hidden .screen-header,.enso-screen.boot-hidden .history-control,.enso-screen.boot-hidden .threshold-alert,.enso-screen.boot-hidden .kpi-strip,.enso-screen.boot-hidden .screen-body,.enso-screen.boot-hidden .time-control,.enso-screen.boot-hidden .module-workbench{opacity:0;transform:translateY(8px)}
+.screen-header,.history-control,.threshold-alert,.kpi-strip,.screen-body,.time-control,.module-workbench{transition:opacity .5s ease,transform .5s ease}
 
 /* ---- B2 · 全局 HUD 框架 ---- */
 .hud-frame{position:fixed;inset:0;z-index:30;pointer-events:none}
@@ -1307,24 +1285,8 @@ export default {
 .timeline-event-mark{position:absolute;top:-3px;width:5px;height:5px;background:#ffd79a;box-shadow:0 0 6px rgba(255,206,132,.9);transform:translateX(-50%) rotate(45deg)}
 @media(max-width:620px){.threshold-alert{gap:7px;padding:6px 9px}.alert-copy small{display:none}}
 
-/* ---- B4 · 数据流水线 ---- */
-.pipeline-strip{position:relative;display:flex;align-items:center;flex:0 0 40px;gap:0;padding:0 14px;border:1px solid rgba(58,134,161,.28);background:linear-gradient(100deg,rgba(8,38,56,.82),rgba(6,28,44,.68));overflow:hidden}
-.pipeline-strip:before{position:absolute;inset:0;content:"";background:linear-gradient(90deg,rgba(70,190,210,.05) 1px,transparent 1px);background-size:42px 100%;pointer-events:none}
-.pipeline-node{position:relative;z-index:1;display:flex;flex:1;align-items:center;gap:9px;min-width:0;color:#6f8ea0;transition:color .3s}
-.pipeline-node:not(:first-child){padding-left:18px}
-.pipeline-node:not(:last-child):after{position:absolute;right:-1px;top:50%;width:36px;height:1px;content:"";background:linear-gradient(90deg,rgba(90,190,210,.4),rgba(90,190,210,.08))}
-.node-dot{display:grid;width:24px;height:24px;flex:0 0 24px;place-items:center;border:1px solid rgba(80,164,190,.28);border-radius:50%;background:rgba(14,66,88,.4);font-size:12px;transition:all .3s}
-.node-copy{min-width:0}
-.node-copy b{display:block;font-size:9px;letter-spacing:1.2px;font-weight:600}
-.node-copy small{display:block;margin-top:1px;color:#64808f;font-size:8px;white-space:nowrap}
-.pipeline-node.active{color:#8ef0e6}
-.pipeline-node.active .node-dot{border-color:rgba(110,230,225,.75);color:#aef7ef;background:rgba(28,124,138,.5);box-shadow:0 0 14px rgba(62,213,204,.3)}
-.pipeline-node.active .node-copy small{color:#7fc6c2}
-.pipeline-flow{position:absolute;top:50%;left:14px;right:14px;height:1px;overflow:hidden;pointer-events:none}
-.pipeline-flow:after{position:absolute;top:0;left:0;width:70px;height:1px;content:"";background:linear-gradient(90deg,transparent,#5fe6da,transparent);animation:pipelineRun 4.2s linear infinite}
-@keyframes pipelineRun{0%{transform:translateX(-70px)}100%{transform:translateX(920px)}}
+/* ---- B10 · 面板 AI 按钮 ---- */
 .panel-ai{display:grid;flex:0 0 22px;width:22px;height:22px;place-items:center;margin-left:6px;border:1px solid rgba(83,162,181,.28);border-radius:4px;color:#8fb7c5;background:rgba(14,65,84,.2);font-size:11px;cursor:pointer;transition:all .2s}
 .panel-ai:hover{color:#d9f8f5;border-color:rgba(67,205,216,.55);background:rgba(20,95,110,.5)}
-@media(max-height:760px) and (min-width:901px){.pipeline-strip{flex-basis:34px}}
-@media(max-width:900px){.pipeline-strip{display:none}.panel-ai{width:20px;height:20px;font-size:10px}}
+@media(max-width:900px){.panel-ai{width:20px;height:20px;font-size:10px}}
 </style>
