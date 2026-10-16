@@ -1,5 +1,5 @@
 <template>
-  <div class="enso-screen" :class="[layerChoice + '-mode', { 'boot-hidden': !bootDone }]">
+  <div class="enso-screen" :class="[layerChoice + '-mode', screenScopeClass, { 'boot-hidden': !bootDone }]">
     <div class="ambient-glow ambient-glow-left"></div>
     <div class="ambient-glow ambient-glow-right"></div>
 
@@ -31,6 +31,7 @@
       <div class="screen-title">
         <span class="title-kicker">PACIFIC OCEAN · ENSO WATCH</span>
         <h1>ENSO 预测分析与监测平台</h1>
+        <span class="screen-mode-chip"><i></i>当前数据 · {{ modeChipText }}</span>
       </div>
       <div class="header-status">
         <span class="live-indicator"><i></i>系统运行正常</span>
@@ -53,20 +54,31 @@
       </section>
     </header>
 
-    <section class="history-control panel-card" aria-label="历史 ENSO 数据选择">
+    <section class="history-control panel-card" aria-label="数据展示类型与回放控制">
       <div class="history-control-fields">
-        <div class="history-type-switch" role="tablist" aria-label="历史数据类型">
-          <button type="button" role="tab" :aria-selected="historyType === 'event'" :class="{ active: historyType === 'event' }" @click="selectHistoryType('event')"><i class="el-icon-time"></i>ENSO 历史事件</button>
-          <button type="button" role="tab" :aria-selected="historyType === 'model'" :class="{ active: historyType === 'model' }" @click="selectHistoryType('model')"><i class="el-icon-data-analysis"></i>LSTA-Swin 历史预测</button>
+        <div class="history-type-switch" role="tablist" aria-label="数据展示类型">
+          <button type="button" role="tab" class="tab-live" :aria-selected="viewScope === 'live'" :class="{ active: viewScope === 'live' }" @click="switchToLive"><i class="el-icon-monitor"></i>实时状态</button>
+          <button type="button" role="tab" class="tab-event" :aria-selected="viewScope === 'event'" :class="{ active: viewScope === 'event' }" @click="openReplayConfirm('event')"><i class="el-icon-time"></i>ENSO 历史事件</button>
+          <button type="button" role="tab" class="tab-model" :aria-selected="viewScope === 'model'" :class="{ active: viewScope === 'model' }" @click="openReplayConfirm('model')"><i class="el-icon-data-analysis"></i>模型历史预测</button>
         </div>
-        <el-select v-if="historyType === 'event'" v-model="selectedHistoryEventId" class="history-select" filterable aria-label="选择 ENSO 历史事件" placeholder="选择历史事件" @change="syncHistoryQuery">
+        <el-select v-if="historyMode && historyType === 'event'" v-model="selectedHistoryEventId" class="history-select" filterable aria-label="选择 ENSO 历史事件" placeholder="选择历史事件" @change="syncHistoryQuery">
           <el-option v-for="event in historyEvents" :key="event.id" :label="event.label" :value="event.id"><span class="history-option"><i :class="event.type.indexOf('拉尼娜') > -1 ? 'cool' : 'warm'"></i>{{ event.label }}</span></el-option>
         </el-select>
-        <el-select v-else v-model="selectedHistoryModelStart" class="history-select" filterable aria-label="选择 LSTA-Swin 历史预测起报月份" placeholder="选择起报月份" @change="syncHistoryQuery">
+        <el-select v-else-if="historyMode" v-model="selectedHistoryModelStart" class="history-select" filterable aria-label="选择 LSTA-Swin 模型历史预测起报月份" placeholder="选择起报月份" @change="syncHistoryQuery">
           <el-option v-for="option in modelStartOptions" :key="option.id" :label="option.label" :value="option.id" />
         </el-select>
-        <div class="history-current-summary"><span>当前月份</span><strong>{{ historyCurrentMonthLabel }}</strong><small>{{ historyCurrentPointLabel }} · {{ historyCurrentRange }}</small></div>
-        <div class="history-context-summary"><span>{{ historyActiveItem.type }}</span><small>{{ historyEventTimeLabel }}</small><b>峰值 {{ historyPeakLabel }}</b></div>
+        <span v-else class="history-live-hint">当前展示实时观测数据 · 点击「ENSO 历史事件」或「模型历史预测」即可进入历史回放</span>
+        <div v-if="historyMode" class="history-current-summary"><span>当前月份</span><strong>{{ historyCurrentMonthLabel }}</strong><small>{{ historyCurrentPointLabel }} · {{ historyCurrentRange }}</small></div>
+      </div>
+      <div class="history-mode-banner" :class="'banner-' + viewScope" role="status">
+        <span class="banner-dot"></span>
+        <div class="banner-copy">
+          <strong>{{ modeBanner.title }}</strong>
+          <small>{{ modeBanner.meta }}</small>
+        </div>
+        <span class="banner-hint">{{ modeBanner.hint }}</span>
+        <button v-if="viewScope !== 'live'" type="button" class="banner-action" @click="openReplayConfirm(viewScope)"><i :class="isPlaying ? 'el-icon-refresh' : 'el-icon-video-play'"></i>{{ isPlaying ? '重新播放' : '开始播放' }}</button>
+        <button v-if="viewScope !== 'live'" type="button" class="banner-exit" @click="switchToLive"><i class="el-icon-back"></i>返回实时</button>
       </div>
     </section>
 
@@ -108,7 +120,7 @@
       <aside class="side-column left-column">
         <section class="panel-card phase-card">
           <div class="panel-heading">
-            <div><span class="panel-kicker">{{ historyMode ? 'HISTORICAL MONITORING' : 'LIVE OBSERVATION' }}</span><h2>{{ historyMode ? '海气历史监测' : '海气实时监测' }}</h2></div>
+            <div><span class="panel-kicker">{{ phasePanelKicker }}</span><h2>{{ phasePanelTitle }}</h2></div>
             <span class="data-age"><i></i>更新于 {{ dataUpdatedAt }}</span>
             <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('phase')"><i class="el-icon-cpu"></i></button>
           </div>
@@ -157,7 +169,7 @@
       <section class="center-column">
         <section class="map-card panel-card" :class="{ 'map-card-maximized': mapMaximized }">
           <div class="map-heading">
-            <div class="map-title"><span class="map-live-icon"><i></i></span><div><span class="panel-kicker">{{ historyMode ? 'GLOBAL · HISTORICAL SSTA / TRADE WINDS' : 'TROPICAL PACIFIC · SSTA / TRADE WINDS' }}</span><h2>{{ historyMode ? '全球海温异常与信风场' : '热带太平洋海温距平与信风场' }}</h2></div></div>
+            <div class="map-title"><span class="map-live-icon"><i></i></span><div><span class="panel-kicker">{{ mapPanelKicker }}</span><h2>{{ mapPanelTitle }}</h2></div></div>
             <span class="map-heading-note">拖动旋转 · 滚轮缩放 · Niño3.4 核心区追踪</span>
           </div>
 
@@ -181,7 +193,7 @@
         </section>
         <section class="panel-card forecast-card">
           <div class="panel-heading">
-            <div><span class="panel-kicker">{{ historyMode ? 'NINO3.4 INDEX · HISTORICAL' : 'NINO3.4 INDEX · OBS / FCST' }}</span><h2>指数演变趋势</h2></div>
+            <div><span class="panel-kicker">{{ indexPanelKicker }}</span><h2>指数演变趋势</h2></div>
             <span class="unit-label">°C</span>
             <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('index')"><i class="el-icon-cpu"></i></button>
           </div>
@@ -206,7 +218,7 @@
     </main>
 
     <footer class="time-control">
-      <div class="timeline-label"><span class="panel-kicker">ENSO SEASONAL TIMELINE</span><strong>演变时间轴</strong></div>
+      <div class="timeline-label"><span class="panel-kicker">ENSO SEASONAL TIMELINE</span><strong>{{ timelineScopeTitle }}</strong></div>
       <button class="play-button" type="button" :aria-label="isPlaying ? '暂停演变' : '播放演变'" @click="onPlayClick"><i :class="isPlaying ? 'el-icon-video-pause' : 'el-icon-video-play'"></i></button>
       <div class="timeline-track-wrap">
         <div class="timeline-labels"><span v-for="period in timelineLabels" :key="period.index" :class="{ selected: period.index === currentIndexSafe }" @click="selectTimelineIndex(period.index)">{{ period.label }}</span></div>
@@ -223,6 +235,30 @@
       <div class="timeline-current"><span>当前时次</span><strong>{{ activePeriod }}</strong><small>{{ historyMode ? historyCurrentPointLabel : (currentIndex < 3 ? '观测场' : '预测场') }}</small></div>
       <button type="button" class="timeline-ai-button" :class="{ ready: historyMode }" title="AI 助手解读当前时间轴状态" @click="openAiBriefingFromTimeline('button')"><i class="el-icon-cpu"></i>AI 解读</button>
     </footer>
+
+    <!-- B15 · 回放确认框：点击历史事件 / 模型历史预测标签后确认是否播放 -->
+    <div v-if="replayConfirm.visible" class="replay-confirm-mask" @click.self="cancelReplayConfirm">
+      <div class="replay-confirm-card" :class="'confirm-' + replayConfirm.mode" role="dialog" aria-modal="true" aria-labelledby="replayConfirmTitle">
+        <div class="replay-confirm-head">
+          <div><span class="panel-kicker">{{ replayConfirmInfo.kicker }}</span><h3 id="replayConfirmTitle">{{ replayConfirmInfo.title }}</h3></div>
+          <button type="button" class="replay-confirm-close" aria-label="关闭确认框" @click="cancelReplayConfirm"><i class="el-icon-close"></i></button>
+        </div>
+        <p class="replay-confirm-question">{{ replayConfirmInfo.question }}</p>
+        <div class="replay-confirm-meta">
+          <div><span>回放对象</span><b>{{ replayConfirmInfo.itemLabel }}</b></div>
+          <div><span>{{ replayConfirmInfo.rangeName }}</span><b>{{ replayConfirmInfo.rangeLabel }}</b></div>
+          <div><span>强度峰值</span><b>{{ replayConfirmInfo.peakLabel }}</b></div>
+          <div><span>逐月帧数</span><b>{{ replayConfirmInfo.frameLabel }}</b></div>
+        </div>
+        <p class="replay-confirm-source"><i class="el-icon-document"></i><span>{{ replayConfirmInfo.source }}</span></p>
+        <p v-if="replayConfirmInfo.warning" class="replay-confirm-warning"><i class="el-icon-warning-outline"></i><span>{{ replayConfirmInfo.warning }}</span></p>
+        <p class="replay-confirm-note">「开始播放」将切换到该数据并逐月回放；取消则保持当前视图不变。</p>
+        <div class="replay-confirm-actions">
+          <button type="button" class="confirm-secondary" @click="cancelReplayConfirm">取消</button>
+          <button ref="confirmPlayButton" type="button" class="confirm-primary" @click="confirmReplayPlayback"><i class="el-icon-video-play"></i>开始播放</button>
+        </div>
+      </div>
+    </div>
 
     <section class="module-workbench" aria-labelledby="moduleWorkbenchTitle">
       <div class="workbench-heading">
@@ -291,6 +327,7 @@ export default {
       modelStartOptions,
       mapMaximized: false,
       liveStatusVisible: false,
+      replayConfirm: { visible: false, mode: 'event' },
       layerChoice: 'combined',
       scrubbing: false,
       // B1 · 启动自检
@@ -335,6 +372,109 @@ export default {
       const view = this.$route && this.$route.query ? this.$route.query.view : ''
       const normalizedView = Array.isArray(view) ? view[0] : view
       return normalizedView === 'history'
+    },
+    // ---- 数据模式三态：实时状态 / ENSO 历史事件 / 模型历史预测 ----
+    viewScope() {
+      if (!this.historyMode) return 'live'
+      return this.historyType === 'model' ? 'model' : 'event'
+    },
+    screenScopeClass() {
+      return `scope-${this.viewScope}`
+    },
+    modeChipText() {
+      const base = this.viewScope === 'model'
+        ? 'LSTA-Swin 模型历史预测'
+        : this.viewScope === 'event'
+          ? 'ENSO 历史事件回放'
+          : '实时状态'
+      return this.isPlaying ? `${base} · 播放中` : base
+    },
+    phasePanelKicker() {
+      if (this.viewScope === 'model') return 'MODEL REPLAY · HISTORICAL'
+      if (this.viewScope === 'event') return 'EVENT REPLAY · HISTORICAL'
+      return 'LIVE OBSERVATION'
+    },
+    phasePanelTitle() {
+      if (this.viewScope === 'model') return '海气历史监测 · 模型预测'
+      if (this.viewScope === 'event') return '海气历史监测 · 事件回放'
+      return '海气实时监测'
+    },
+    mapPanelKicker() {
+      if (this.viewScope === 'model') return 'MODEL REPLAY · GLOBAL SSTA / TRADE WINDS'
+      if (this.viewScope === 'event') return 'EVENT REPLAY · GLOBAL SSTA / TRADE WINDS'
+      return 'TROPICAL PACIFIC · SSTA / TRADE WINDS'
+    },
+    mapPanelTitle() {
+      if (this.viewScope === 'model') return '全球海温异常与信风场 · 模型预测'
+      if (this.viewScope === 'event') return '全球海温异常与信风场 · 事件回放'
+      return '热带太平洋海温距平与信风场'
+    },
+    indexPanelKicker() {
+      if (this.viewScope === 'model') return 'NINO3.4 INDEX · MODEL REPLAY'
+      if (this.viewScope === 'event') return 'NINO3.4 INDEX · EVENT REPLAY'
+      return 'NINO3.4 INDEX · OBS / FCST'
+    },
+    timelineScopeTitle() {
+      if (this.viewScope === 'model') return '模型预测回放时间轴'
+      if (this.viewScope === 'event') return '事件回放时间轴'
+      return '实时演变时间轴'
+    },
+    modeBanner() {
+      if (this.viewScope === 'live') {
+        return {
+          title: '实时状态 · 最新观测',
+          meta: `数据更新于 ${this.dataUpdatedAt} · 数据源 NOAA OISST v2.1 / ERSST v5 / GFS`,
+          hint: '点击左侧标签可进入历史事件回放或模型历史预测'
+        }
+      }
+      if (this.viewScope === 'model') {
+        const item = modelReplay(this.selectedHistoryModelStart)
+        return {
+          title: `模型历史预测 · ${item.label}`,
+          meta: `${item.source} · 共 ${item.series.length} 个月预测轨迹`,
+          hint: this.isPlaying ? '逐月回放中…' : '已就绪 · 可续播或拖动时间轴'
+        }
+      }
+      const item = this.historyActiveItem || {}
+      const series = Array.isArray(item.series) ? item.series : []
+      const endLabel = item.end || (series.length ? series[series.length - 1].month : '—')
+      return {
+        title: `ENSO 历史事件 · ${item.label || '—'}`,
+        meta: `${item.start || '—'} 至 ${endLabel} · 峰值 ${item.peak || '—'} · ${item.source || 'NOAA CPC ONI v6'}`,
+        hint: this.isPlaying ? '逐月回放中…' : '已就绪 · 可续播或拖动时间轴'
+      }
+    },
+    replayConfirmInfo() {
+      if (this.replayConfirm.mode === 'model') {
+        const item = modelReplay(this.selectedHistoryModelStart)
+        return {
+          kicker: 'MODEL REPLAY · CONFIRMATION',
+          title: '播放模型历史预测回放',
+          question: '是否开始播放以下 LSTA-Swin 模型历史预测数据？',
+          itemLabel: item.label,
+          rangeName: '起报与时长',
+          rangeLabel: `${item.start} 起报`,
+          peakLabel: `轨迹峰值 ${item.peak}`,
+          frameLabel: `${item.series.length} 个月逐月`,
+          source: item.source || 'AIMB LSTA-Swin 历史预测演示序列',
+          warning: ''
+        }
+      }
+      const item = this.historyEvents.find(event => event.id === this.selectedHistoryEventId) || this.historyEvents[0] || {}
+      const series = Array.isArray(item.series) ? item.series : []
+      const endLabel = item.end || (series.length ? series[series.length - 1].month : '—')
+      return {
+        kicker: 'ENSO EVENT REPLAY · CONFIRMATION',
+        title: '播放历史事件回放',
+        question: '是否开始播放以下 ENSO 历史事件？',
+        itemLabel: item.label || '—',
+        rangeName: '事件时段',
+        rangeLabel: `${item.start || '—'} 至 ${endLabel}`,
+        peakLabel: `事件峰值 ${item.peak || '—'}`,
+        frameLabel: series.length ? `${series.length} 个月逐月` : '无逐月序列',
+        source: item.source || 'NOAA CPC ONI v6 历史事件目录',
+        warning: item.hasData ? '' : '该事件仅列入 NOAA CPC ONI 事件目录，未绑定本地月度序列与空间场，确认后将仅切换到事件视图。'
+      }
     },
     historyActiveItem() {
       if (this.historyType === 'model') return modelReplay(this.selectedHistoryModelStart)
@@ -913,6 +1053,10 @@ export default {
       this.$nextTick(() => this.handleResize())
     },
     handleKeydown(event) {
+      if (event.key === 'Escape' && this.replayConfirm.visible) {
+        this.cancelReplayConfirm()
+        return
+      }
       if (event.key === 'Escape' && this.mapMaximized) {
         this.toggleMapMaximize()
         return
@@ -950,11 +1094,62 @@ export default {
         this.currentIndex = this.currentIndexSafe + 1
       }, this.playbackIntervalMs)
     },
-    selectHistoryType(type) {
-      this.historyType = type
-      // The selector is also available in live mode; selecting a tab enters
-      // the historical view and keeps the query in sync.
-      this.syncHistoryQuery()
+    // ---- 数据模式三态：实时 / 历史事件 / 模型历史预测 ----
+    switchToLive() {
+      this.stopPlayback()
+      if (!this.historyMode) return
+      const query = { ...(this.$route.query || {}) }
+      delete query.view
+      delete query.start
+      this.$router.replace({ query }).catch(() => {})
+    },
+    openReplayConfirm(mode) {
+      this.replayConfirm = { visible: true, mode }
+      this.$nextTick(() => {
+        const button = this.$refs.confirmPlayButton
+        if (button && typeof button.focus === 'function') button.focus()
+      })
+    },
+    cancelReplayConfirm() {
+      this.replayConfirm = { ...this.replayConfirm, visible: false }
+    },
+    confirmReplayPlayback() {
+      const mode = this.replayConfirm.mode
+      this.replayConfirm = { ...this.replayConfirm, visible: false }
+      const eventItem = mode === 'event'
+        ? (this.historyEvents.find(event => event.id === this.selectedHistoryEventId) || null)
+        : null
+      const canPlay = mode === 'model' || !!(eventItem && eventItem.hasData)
+      this.stopPlayback()
+      if (mode !== this.historyType) this.historyType = mode
+      const query = { ...(this.$route.query || {}), view: 'history' }
+      if (mode === 'model') query.start = this.selectedHistoryModelStart
+      else delete query.start
+      const current = this.$route.query || {}
+      const currentStart = Array.isArray(current.start) ? current.start[0] : current.start
+      const sameRoute = current.view === 'history' && currentStart === query.start
+      const after = () => {
+        if (!canPlay) {
+          this.$message({
+            type: 'info',
+            showClose: true,
+            duration: 3600,
+            message: `${eventItem && eventItem.label ? eventItem.label : '该事件'}仅有事件目录信息，未绑定本地逐月序列与空间场，暂不能逐月回放。`
+          })
+          return
+        }
+        this.$nextTick(() => {
+          this.currentIndex = 0
+          this.$nextTick(() => {
+            if (this.activePeriods.length > 1 && !this.isPlaying) this.togglePlayback()
+          })
+        })
+      }
+      if (sameRoute) {
+        after()
+        return
+      }
+      this.$router.replace({ query }).catch(() => {}).then(after)
     },
     // ---- 演变时间轴 × AI 助手联动 ----
     // 播放/暂停只控制演变，不再唤起 AI；AI 解读仅通过「AI 解读」按钮触发。
@@ -986,7 +1181,7 @@ export default {
           type: 'info',
           showClose: true,
           duration: 3000,
-          message: '请先选择「ENSO 历史事件」或「LSTA-Swin 历史预测」，再点击演变时间轴查看 AI 解读'
+          message: '请先点击「ENSO 历史事件」或「模型历史预测」并确认开始播放，再查看 AI 解读'
         })
         return
       }
@@ -1289,4 +1484,69 @@ export default {
 .panel-ai{display:grid;flex:0 0 22px;width:22px;height:22px;place-items:center;margin-left:6px;border:1px solid rgba(83,162,181,.28);border-radius:4px;color:#8fb7c5;background:rgba(14,65,84,.2);font-size:11px;cursor:pointer;transition:all .2s}
 .panel-ai:hover{color:#d9f8f5;border-color:rgba(67,205,216,.55);background:rgba(20,95,110,.5)}
 @media(max-width:900px){.panel-ai{width:20px;height:20px;font-size:10px}}
+
+/* ---- B15 · 数据模式三态：实时状态 / ENSO 历史事件 / 模型历史预测 ---- */
+.enso-screen{--mode-accent:#46dce5;--mode-accent-bright:#9df4ee;--mode-line:rgba(70,220,229,.4);--mode-glow:rgba(70,220,229,.2);--mode-fill:rgba(70,220,229,.12)}
+.enso-screen.scope-event{--mode-accent:#ffb066;--mode-accent-bright:#ffd7a8;--mode-line:rgba(255,176,102,.44);--mode-glow:rgba(255,176,102,.22);--mode-fill:rgba(255,176,102,.13)}
+.enso-screen.scope-model{--mode-accent:#b697ff;--mode-accent-bright:#dbcaff;--mode-line:rgba(182,150,255,.44);--mode-glow:rgba(182,151,255,.22);--mode-fill:rgba(182,151,255,.13)}
+.screen-title .screen-mode-chip{display:inline-flex;align-items:center;gap:6px;margin-top:2px;padding:1px 9px;border:1px solid var(--mode-line);border-radius:10px;color:var(--mode-accent-bright);background:var(--mode-fill);font-size:8px;line-height:1.9;letter-spacing:.6px;white-space:nowrap;transition:color .25s,border-color .25s,background .25s}
+.screen-mode-chip i{width:5px;height:5px;border-radius:50%;background:var(--mode-accent);box-shadow:0 0 8px var(--mode-accent);animation:statusPulse 1.8s ease-in-out infinite}
+.screen-header:before,.screen-header:after{background:linear-gradient(90deg,transparent,var(--mode-accent),transparent);filter:drop-shadow(0 0 5px var(--mode-accent))}
+.ambient-glow-left{background:var(--mode-accent)}
+.panel-card:before{background:linear-gradient(90deg,var(--mode-accent),rgba(5,20,34,0));filter:drop-shadow(0 0 5px var(--mode-accent))}
+.kpi-strip{border-color:var(--mode-line)}
+.time-control{border-color:var(--mode-line)}
+.map-live-icon:before,.map-live-icon:after,.map-live-icon i{border-color:var(--mode-line)}
+.map-live-icon:after{background:var(--mode-accent);box-shadow:0 0 8px var(--mode-accent)}
+.play-button{border-color:var(--mode-line);color:var(--mode-accent-bright)}
+.play-button:hover{border-color:var(--mode-accent-bright);color:#fff;box-shadow:0 0 13px var(--mode-glow)}
+.timeline-slider{background:linear-gradient(90deg,var(--mode-accent) var(--progress),#1c465d var(--progress))}
+.timeline-slider::-webkit-slider-thumb{border-color:var(--mode-accent-bright);background:var(--mode-accent);box-shadow:0 0 10px var(--mode-glow)}
+.timeline-slider::-moz-range-thumb{border-color:var(--mode-accent-bright);background:var(--mode-accent);box-shadow:0 0 10px var(--mode-glow)}
+.timeline-labels span.selected{color:var(--mode-accent-bright)}
+.timeline-labels span.selected:after{border-color:var(--mode-accent-bright);background:var(--mode-accent);box-shadow:0 0 8px var(--mode-accent)}
+.history-type-switch button.tab-event.active{color:#ffdcb2;background:linear-gradient(135deg,rgba(172,102,40,.5),rgba(112,64,26,.34));box-shadow:inset 0 0 0 1px rgba(255,176,102,.44)}
+.history-type-switch button.tab-model.active{color:#ddcdfd;background:linear-gradient(135deg,rgba(96,72,176,.5),rgba(58,44,116,.34));box-shadow:inset 0 0 0 1px rgba(178,150,255,.44)}
+.history-live-hint{flex:1;min-width:0;padding-left:2px;color:#7f9cad;font-size:9px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.history-mode-banner{display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--mode-line);border-radius:6px;background:linear-gradient(90deg,var(--mode-fill),rgba(4,22,36,.35) 55%,rgba(4,22,36,.15));transition:border-color .25s,background .25s}
+.history-mode-banner .banner-dot{flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:var(--mode-accent);box-shadow:0 0 9px var(--mode-accent);animation:statusPulse 1.8s ease-in-out infinite}
+.banner-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.banner-copy strong{color:var(--mode-accent-bright);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.banner-copy small{color:#7d99ab;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.banner-hint{color:#8fa9b8;font-size:8px;white-space:nowrap}
+.banner-action,.banner-exit{display:flex;align-items:center;gap:5px;flex:0 0 auto;padding:5px 9px;border:1px solid var(--mode-line);border-radius:4px;color:var(--mode-accent-bright);background:var(--mode-fill);font-family:inherit;font-size:9px;cursor:pointer;transition:color .18s,border-color .18s,box-shadow .18s}
+.banner-action:hover,.banner-exit:hover{color:#fff;border-color:var(--mode-accent);box-shadow:0 0 11px var(--mode-glow)}
+.banner-exit{color:#9db4c2;border-color:rgba(84,140,160,.32);background:rgba(13,52,66,.4)}
+.banner-exit:hover{color:#e3f6ff;border-color:rgba(105,178,196,.6);box-shadow:none}
+
+/* ---- B15 · 回放确认框 ---- */
+.replay-confirm-mask{position:fixed;z-index:26000;inset:0;display:grid;place-items:center;padding:18px;background:rgba(2,11,19,.68);animation:rcFade .18s ease-out both}
+.replay-confirm-card{--dlg-accent:#ffb066;--dlg-bright:#ffd7a8;--dlg-line:rgba(255,176,102,.46);--dlg-fill:rgba(255,176,102,.12);width:min(432px,100%);max-height:86vh;overflow:auto;padding:15px 17px 14px;border:1px solid var(--dlg-line);border-radius:9px;background:linear-gradient(150deg,rgba(10,38,56,.99),rgba(4,19,32,.99));box-shadow:0 26px 80px rgba(0,0,0,.62),0 0 32px var(--dlg-fill);animation:rcPop .22s cubic-bezier(.2,.8,.2,1) both}
+.replay-confirm-card.confirm-model{--dlg-accent:#b697ff;--dlg-bright:#dbcaff;--dlg-line:rgba(182,150,255,.46);--dlg-fill:rgba(182,151,255,.13)}
+.replay-confirm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:10px;border-bottom:1px solid rgba(67,135,160,.22)}
+.replay-confirm-head .panel-kicker{color:var(--dlg-accent)}
+.replay-confirm-head h3{margin:3px 0 0;color:#ecfbff;font-size:15px;font-weight:600}
+.replay-confirm-close{display:grid;width:24px;height:24px;flex:0 0 24px;place-items:center;padding:0;border:1px solid rgba(91,178,191,.3);border-radius:4px;color:#8fb2bd;background:rgba(16,71,87,.28);font-size:12px;cursor:pointer}
+.replay-confirm-close:hover{color:#eaffff;border-color:var(--dlg-line)}
+.replay-confirm-question{margin:11px 0 0;color:#cfe6ee;font-size:11px;line-height:1.65}
+.replay-confirm-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0 0}
+.replay-confirm-meta>div{padding:8px 9px;border:1px solid rgba(74,140,166,.26);border-radius:6px;background:rgba(6,30,47,.6)}
+.replay-confirm-meta span{display:block;color:#7e9cab;font-size:8px}
+.replay-confirm-meta b{display:block;margin-top:4px;color:#e9f8fc;font-size:11px;font-weight:600}
+.replay-confirm-source,.replay-confirm-warning,.replay-confirm-note{display:flex;align-items:flex-start;gap:6px;margin:9px 0 0;font-size:8px;line-height:1.6}
+.replay-confirm-source{color:#7e9cab}
+.replay-confirm-source i{color:var(--dlg-accent)}
+.replay-confirm-warning{padding:7px 9px;border:1px solid rgba(255,176,102,.35);border-radius:5px;color:#ffcf9c;background:rgba(120,60,25,.22)}
+.replay-confirm-note{color:#8aa4b2}
+.replay-confirm-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:13px;padding-top:11px;border-top:1px solid rgba(67,135,160,.2)}
+.replay-confirm-actions button{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:5px;font-family:inherit;font-size:10px;cursor:pointer;transition:all .18s}
+.confirm-secondary{border:1px solid rgba(88,146,166,.4);color:#a9c6d2;background:rgba(12,48,63,.5)}
+.confirm-secondary:hover{color:#e6f8ff;border-color:rgba(120,180,198,.7)}
+.confirm-primary{border:1px solid var(--dlg-line);color:#0a1620;background:linear-gradient(135deg,var(--dlg-bright),var(--dlg-accent));font-weight:600;box-shadow:0 0 16px var(--dlg-fill)}
+.confirm-primary:hover{box-shadow:0 0 22px var(--dlg-line);filter:brightness(1.06)}
+@keyframes rcFade{from{opacity:0}to{opacity:1}}
+@keyframes rcPop{from{opacity:.6;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:900px){.history-mode-banner{flex-wrap:wrap;gap:6px}.banner-hint{display:none}}
+@media(max-width:620px){.screen-title .screen-mode-chip{margin-top:1px;padding:1px 7px;font-size:7px}.replay-confirm-meta{grid-template-columns:1fr}.replay-confirm-card{max-height:82vh}}
+@media(prefers-reduced-motion:reduce){.replay-confirm-mask,.replay-confirm-card{animation:none}.history-mode-banner .banner-dot{animation:none}.screen-mode-chip{transition:none}}
 </style>
