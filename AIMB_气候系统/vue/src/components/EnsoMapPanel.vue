@@ -124,13 +124,14 @@
       <button type="button" class="roi-ai" @click="askRoiAi"><i class="el-icon-cpu"></i>AI 解读该区域</button>
     </div>
 
-    <!-- A8 · 纬向剖面抽屉（2D/3D 通用） -->
-    <div v-if="profileOn" class="profile-drawer" role="region" aria-label="纬向剖面">
+    <!-- A8 · 纬向剖面抽屉（2D/3D 通用，小屏可折叠） -->
+    <div v-if="profileOn" class="profile-drawer" :class="{ 'profile-collapsed': profileCollapsed }" role="region" aria-label="纬向剖面">
       <div class="profile-head">
         <span><i></i>纬向剖面 · {{ profileLat }}° 纬线{{ sstMode === 'anomaly' ? '（距平）' : '（海温）' }}</span>
         <div class="profile-lats">
           <button v-for="lat in profileLatOptions" :key="lat" type="button" :class="{ active: profileLat === lat }" @click="setProfileLat(lat)">{{ lat > 0 ? '+' + lat + '°' : lat === 0 ? '0°' : lat + '°' }}</button>
         </div>
+        <button type="button" class="profile-toggle" :title="profileCollapsed ? '展开剖面' : '收起剖面'" @click="profileCollapsed = !profileCollapsed"><i :class="profileCollapsed ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"></i></button>
         <button type="button" class="profile-close" @click="toggleProfile"><i class="el-icon-close"></i></button>
       </div>
       <div class="profile-chart">
@@ -664,7 +665,8 @@ export default {
       compareOn: false,
       compareSplitRatio: 0.5,
       roiStats: null,
-      hotspotData: []
+      hotspotData: [],
+      profileCollapsed: false
     }
   },
   computed: {
@@ -835,6 +837,8 @@ export default {
     this.applyExternalSst()
     this.loadRealWind()
     this.pollTimer = window.setInterval(this.refreshRealWind, 30 * 60 * 1000)
+    // 小屏默认收起剖面抽屉，减少遮挡
+    if (typeof window !== 'undefined' && window.innerWidth <= 1300) this.profileCollapsed = true
   },
   beforeDestroy() {
     this.destroyed = true
@@ -1615,6 +1619,7 @@ export default {
       map.on('mousedown', (event) => {
         if (!this.selectModeOn || !event.originalEvent || event.originalEvent.button !== 0) return
         this._selStart = { lat: event.latlng.lat, lng: event.latlng.lng }
+        this._selStartPx = { x: event.originalEvent.clientX, y: event.originalEvent.clientY }
       })
       map.on('mousemove', (event) => {
         if (!this.selectModeOn || !this._selStart) return
@@ -1633,7 +1638,14 @@ export default {
         const start = this._selStart
         this._selStart = null
         if (this._selPreview) { map.removeLayer(this._selPreview); this._selPreview = null }
-        if (Math.abs(event.latlng.lat - start.lat) < 1.5) return
+        // 用像素距离区分"点击"与"拖框"：经纬度阈值在高缩放级别下会把小框误判成点击
+        const px = this._selStartPx
+        this._selStartPx = null
+        const pixelMoved = px && event.originalEvent
+          ? Math.abs(event.originalEvent.clientX - px.x) + Math.abs(event.originalEvent.clientY - px.y)
+          : 0
+        const latSpan = Math.abs(event.latlng.lat - start.lat)
+        if (pixelMoved < 8 && latSpan < 1.5) return
         const bounds = this.normalizeSelBounds(start, event.latlng)
         this._selection = bounds
         if (this._selRect) map.removeLayer(this._selRect)
@@ -1888,9 +1900,20 @@ export default {
 @media(max-width:900px){.region-select{max-width:96px;font-size:9px}}
 @media(max-width:700px){.region-select{max-width:78px;height:25px;font-size:8px}}
 
-/* ---- 小屏分级精简：次要工具按宽度收起，保住核心图层与放大 ---- */
-@media(max-width:1150px){.tool-select,.tool-compare{display:none}.map-toolbar-right button span{display:none}.map-toolbar-right .maximize-button span{display:inline}.map-toolbar button{padding:0 7px}}
-@media(max-width:980px){.tool-hotspot,.tool-contour{display:none}.map-replay{top:64px}.roi-card{width:206px}}
+/* ---- 小屏分级精简：按钮图标化 → 隐藏次要工具 → 折叠覆盖层 ----
+   注意：.map-toolbar button 有 display:inline-flex，隐藏规则必须用更高特异性 */
+@media(max-width:1250px){
+  .map-toolbar{max-width:calc(100% - 24px)}
+  .map-toolbar-left{flex:0 1 auto;min-width:0}
+  .map-toolbar-right{flex:1 1 auto;min-width:0;justify-content:flex-end}
+  .map-toolbar-right button span{display:none}
+  .map-toolbar-right .maximize-button span{display:inline}
+  .map-toolbar button{padding:0 7px}
+  .map-toolbar .tool-select,.map-toolbar .tool-compare{display:none}
+  .roi-grid>:nth-child(n+3):nth-child(-n+6){display:none}
+}
+@media(max-width:1150px){.roi-card{width:212px}}
+@media(max-width:900px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:196px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}
@@ -1919,14 +1942,16 @@ export default {
 
 /* ---- A8 · 纬向剖面抽屉 ---- */
 .profile-drawer{position:absolute;z-index:7;left:0;right:0;bottom:0;height:112px;padding:7px 12px 6px;border-top:1px solid rgba(96,214,226,.35);background:rgba(4,20,32,.93);backdrop-filter:blur(8px)}
+.profile-drawer.profile-collapsed{height:34px;padding-bottom:4px}
+.profile-drawer.profile-collapsed .profile-chart{display:none}
 .profile-head{display:flex;align-items:center;gap:10px;color:#8fd7e0;font-size:9px}
 .profile-head>span{display:flex;align-items:center;gap:6px}
 .profile-head i{width:5px;height:5px;border-radius:50%;background:#ff8f6b;box-shadow:0 0 7px #ff8f6b}
 .profile-lats{display:flex;gap:3px;margin-left:auto}
 .profile-lats button{min-width:34px;padding:3px 5px;border:1px solid rgba(96,214,226,.28);border-radius:3px;color:#8fb6c4;background:none;font-family:inherit;font-size:8px;cursor:pointer}
 .profile-lats button.active,.profile-lats button:hover{color:#ffe2c8;border-color:rgba(255,150,100,.55);background:rgba(150,70,35,.25)}
-.profile-close{border:0;background:none;color:#7e9dad;font-size:11px;cursor:pointer}
-.profile-close:hover{color:#ffd79a}
+.profile-close,.profile-toggle{border:0;background:none;color:#7e9dad;font-size:11px;cursor:pointer}
+.profile-close:hover,.profile-toggle:hover{color:#ffd79a}
 .profile-chart{position:relative;height:64px;margin-top:5px}
 .profile-chart svg{width:100%;height:100%}
 .profile-zero{stroke:rgba(120,160,180,.35);stroke-width:1}
