@@ -178,7 +178,7 @@
           </div>
 
           <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" :compare-field="mapCompareField" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
-          <div class="map-bottomline"><span><i></i>{{ historyMode ? (historyHasData ? historyCurrentMonthLabel + ' · 历史场' : historyActiveItem.label) : '遥感反演场正常' }}</span><span>{{ historyMode ? historyDataSource : 'NOAA OISST v2.1 · ERSST v5' }}</span><span>{{ historyMode && historyHasData ? '固定距平色标 −3 至 +3 ℃' : '距平基准期 1991–2020' }}</span></div>
+          <div class="map-bottomline"><span><i></i>{{ historyMode ? (historyHasData ? historyCurrentMonthLabel + ' · 历史场' : historyActiveItem.label) : '遥感反演场正常' }}</span><span>{{ historyMode ? historyDataSource : 'NOAA OISST v2.1 · ERSST v5' }}</span><span>{{ historyMode ? (historyHasData ? '固定距平色标 −3 至 +3 ℃' : '距平基准期 1991–2020') : '绝对色标 −2 至 32 ℃' }}</span></div>
         </section>
         <div class="map-stat-row">
           <article v-for="stat in displayMapStats" :key="stat.title"><span class="stat-glyph" :class="stat.tone"><i :class="stat.icon"></i></span><div><small>{{ stat.title }}</small><strong :class="stat.tone === 'warm-glyph' ? 'warm-text' : ''">{{ stat.value }}</strong></div><b>{{ stat.metric }}</b></article>

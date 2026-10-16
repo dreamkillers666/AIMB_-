@@ -161,6 +161,7 @@
     <div v-show="displayMode === '2d'" ref="miniMapEl" class="mini-map" title="点击跳转"></div>
 
     <div v-if="(currentLayer === 'sst' || currentLayer === 'both') && hasSst" class="sst-legend" :aria-label="sstMode === 'anomaly' ? '海温距平图例' : '海表温度图例'">
+      <div class="sst-legend-title">{{ sstMode === 'anomaly' ? 'SSTA · 海温距平 ℃（基准 1991–2020）' : 'SST · 海温绝对值 ℃' }}</div>
       <div class="sst-legend-bar" :style="{ background: colorGradient }"></div><div class="sst-legend-labels"><span>{{ sstMode === 'anomaly' ? '−3' : '−2' }}</span><span>{{ sstMode === 'anomaly' ? '−1.5' : '7' }}</span><span>{{ sstMode === 'anomaly' ? '0' : '15' }}</span><span>{{ sstMode === 'anomaly' ? '+1.5' : '24' }}</span><span>{{ sstMode === 'anomaly' ? '+3 ℃' : '32°C' }}</span></div>
     </div>
     <div class="data-badge" :class="{ 'is-live': windStatus.source === 'real' }"><i></i>{{ windBadgeText }}</div>
@@ -1991,4 +1992,7 @@ export default {
 .sst-legend{bottom:102px}
 .is-compact .sst-legend{bottom:96px}
 .is-maximized .sst-legend{bottom:112px}
+
+/* 图例标题：明确当前色标是"距平"还是"绝对值"，避免与实时模式混淆 */
+.sst-legend-title{margin-bottom:5px;color:#9fc2d2;font-size:8px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
