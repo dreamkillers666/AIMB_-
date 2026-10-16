@@ -215,7 +215,7 @@
         </div>
       </div>
       <div class="timeline-current"><span>当前时次</span><strong>{{ activePeriod }}</strong><small>{{ historyMode ? historyCurrentPointLabel : (currentIndex < 3 ? '观测场' : '预测场') }}</small></div>
-      <button type="button" class="timeline-ai-button" :class="{ ready: historyMode }" title="点击演变时间轴即唤起 AI 助手解读；也可由此按钮主动打开" @click="openAiBriefingFromTimeline('button')"><i class="el-icon-cpu"></i>AI 解读</button>
+      <button type="button" class="timeline-ai-button" :class="{ ready: historyMode }" title="AI 助手解读当前时间轴状态" @click="openAiBriefingFromTimeline('button')"><i class="el-icon-cpu"></i>AI 解读</button>
     </footer>
 
     <section class="module-workbench" aria-labelledby="moduleWorkbenchTitle">
@@ -275,7 +275,7 @@ export default {
       clockTimer: null,
       playTimer: null,
       isPlaying: false,
-      playbackIntervalMs: 900,
+      playbackIntervalMs: 1000,
       charts: {},
       currentIndex: 3,
       historyType: hasModelStart ? 'model' : 'event',
@@ -910,9 +910,16 @@ export default {
       }
       const length = this.activePeriods.length
       if (length < 2) return
+      // 已停在末帧时重新点击播放：回到开头完整再放一遍
+      if (this.currentIndexSafe >= length - 1) this.currentIndex = 0
       this.isPlaying = true
       this.playTimer = setInterval(() => {
-        this.currentIndex = (this.currentIndexSafe + 1) % length
+        // 不循环：播到最后一帧自动停下
+        if (this.currentIndexSafe >= length - 1) {
+          this.stopPlayback()
+          return
+        }
+        this.currentIndex = this.currentIndexSafe + 1
       }, this.playbackIntervalMs)
     },
     selectHistoryType(type) {
@@ -922,12 +929,10 @@ export default {
       this.syncHistoryQuery()
     },
     // ---- 演变时间轴 × AI 助手联动 ----
-    // 选中 ENSO 历史事件或 LSTA-Swin 历史预测后，只要操作演变时间轴
-    // （点标签 / 拖滑杆 / 播放），就唤起全局 AI 助手的报告解读弹窗。
+    // 播放/暂停只控制演变，不再唤起 AI；AI 解读仅通过「AI 解读」按钮触发。
+    // 点标签 / 拖滑杆仍保留 AI 联动。
     onPlayClick() {
-      const wasPlaying = this.isPlaying
       this.togglePlayback()
-      if (!wasPlaying && this.isPlaying) this.openAiBriefingFromTimeline('play')
     },
     selectTimelineIndex(index) {
       this.currentIndex = index

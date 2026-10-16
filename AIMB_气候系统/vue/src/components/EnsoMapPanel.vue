@@ -575,8 +575,8 @@ export default {
       pins: [],
       pinSeq: 0,
       pinDownAt: null,
-      // A14 · 倍速循环
-      speeds: [900, 450, 1600],
+      // A14 · 倍速循环（基准 1 秒一帧，与页面时间轴一致）
+      speeds: [1000, 500, 2000],
       speedIndex: 0
     }
   },
