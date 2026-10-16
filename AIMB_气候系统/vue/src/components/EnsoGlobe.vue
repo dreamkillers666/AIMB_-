@@ -1382,23 +1382,30 @@ export default {
   }
 }
 
-/* ---- 2D 点位探针的球面投影标记 ---- */
-.globe-pin-layer {
+</style>
+
+<style>
+/* ---- 2D 点位探针/热点的球面投影标记 ----
+   注意：标记由 createElement 动态创建，没有 scoped 属性，样式必须放非 scoped 块 */
+.enso-globe-stage .globe-pin-layer {
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
 }
 
-.globe-pin-marker {
+.enso-globe-stage .globe-pin-marker,
+.enso-globe-stage .globe-hotspot-marker {
   position: absolute;
   display: flex;
   align-items: center;
   gap: 5px;
   transform: translate(-50%, -50%);
+  left: -9999px;
+  top: -9999px;
 }
 
-.globe-pin-marker .pin-dot {
+.enso-globe-stage .globe-pin-marker .pin-dot {
   width: 9px;
   height: 9px;
   flex: 0 0 9px;
@@ -1408,7 +1415,7 @@ export default {
   box-shadow: 0 0 10px rgba(255, 200, 120, .85);
 }
 
-.globe-pin-marker .pin-text {
+.enso-globe-stage .globe-pin-marker .pin-text {
   padding: 2px 6px;
   border: 1px solid rgba(255, 206, 122, .5);
   border-radius: 3px;
@@ -1420,16 +1427,7 @@ export default {
   font-variant-numeric: tabular-nums;
 }
 
-/* A4 · 热点球面标记 */
-.globe-hotspot-marker {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  transform: translate(-50%, -50%);
-}
-
-.globe-hotspot-marker .pin-dot {
+.enso-globe-stage .globe-hotspot-marker .pin-dot {
   width: 10px;
   height: 10px;
   flex: 0 0 10px;
@@ -1437,17 +1435,17 @@ export default {
   border-radius: 50%;
 }
 
-.globe-hotspot-marker.warm .pin-dot {
+.enso-globe-stage .globe-hotspot-marker.warm .pin-dot {
   background: #ff8b55;
   box-shadow: 0 0 12px rgba(255, 130, 70, .95);
 }
 
-.globe-hotspot-marker.cool .pin-dot {
+.enso-globe-stage .globe-hotspot-marker.cool .pin-dot {
   background: #5aa8f0;
   box-shadow: 0 0 12px rgba(90, 168, 240, .95);
 }
 
-.globe-hotspot-marker .pin-text {
+.enso-globe-stage .globe-hotspot-marker .pin-text {
   padding: 3px 7px;
   border: 1px solid rgba(255, 178, 110, .45);
   border-left-width: 3px;
@@ -1459,7 +1457,7 @@ export default {
   white-space: nowrap;
 }
 
-.globe-hotspot-marker.cool .pin-text {
+.enso-globe-stage .globe-hotspot-marker.cool .pin-text {
   border-color: rgba(120, 180, 240, .45);
   color: #bfe0ff;
 }

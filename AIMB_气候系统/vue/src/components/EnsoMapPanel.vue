@@ -92,7 +92,7 @@
       <button type="button" role="tab" :aria-selected="displayMode === '2d'" :class="{ active: displayMode === '2d' }" @click="switchDisplayMode('2d')">2D 地图</button>
       <!-- A6 · Niño 分区切换器 -->
       <select v-model="regionKey" class="region-select" aria-label="切换 ENSO 指数参考区">
-        <option v-for="region in regionList" :key="region.key" :value="region.key">{{ region.label }} · {{ region.desc }}</option>
+        <option v-for="region in regionList" :key="region.key" :value="region.key">{{ region.label }}</option>
       </select>
     </div>
 
@@ -101,11 +101,11 @@
       <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'sst' }" @click="switchLayer('sst')"><i class="el-icon-sunny"></i>海温</button>
       <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'both' }" @click="switchLayer('both')"><i class="el-icon-copy-document"></i>叠加</button>
       <span class="toolbar-divider" aria-hidden="true"></span>
-      <button type="button" :disabled="!hasSst" :class="{ active: hotspotsOn }" title="冷暖异常热点检测" @click="toggleHotspots"><i class="el-icon-place"></i>热点</button>
-      <button type="button" :disabled="!hasSst" :class="{ active: contoursOn }" title="距平等值线" @click="toggleContours"><i class="el-icon-s-operation"></i>等值线</button>
-      <button type="button" :disabled="!hasSst" :class="{ active: profileOn }" title="纬向剖面抽屉" @click="toggleProfile"><i class="el-icon-data-analysis"></i>剖面</button>
-      <button v-if="displayMode === '2d'" type="button" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i>框选</button>
-      <button v-if="displayMode === '2d' && canCompare" type="button" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i>对比</button>
+      <button type="button" class="tool-hotspot" :disabled="!hasSst" :class="{ active: hotspotsOn }" title="冷暖异常热点检测" @click="toggleHotspots"><i class="el-icon-place"></i>热点</button>
+      <button type="button" class="tool-contour" :disabled="!hasSst" :class="{ active: contoursOn }" title="距平等值线" @click="toggleContours"><i class="el-icon-s-operation"></i>等值线</button>
+      <button type="button" class="tool-profile" :disabled="!hasSst" :class="{ active: profileOn }" title="纬向剖面抽屉" @click="toggleProfile"><i class="el-icon-data-analysis"></i>剖面</button>
+      <button v-if="displayMode === '2d'" type="button" class="tool-select" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i>框选</button>
+      <button v-if="displayMode === '2d' && canCompare" type="button" class="tool-compare" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i>对比</button>
       <button type="button" class="maximize-button" :aria-label="maximized ? '还原地图大小' : '放大地图'" :title="maximized ? '还原地图大小' : '放大地图'" @click="$emit('toggle-maximize')"><i :class="maximized ? 'el-icon-close' : 'el-icon-full-screen'"></i><span>{{ maximized ? '还原' : '放大' }}</span></button>
     </div>
 
@@ -1885,8 +1885,12 @@ export default {
 .region-select{height:29px;margin-left:4px;padding:0 3px;min-width:0;flex:0 1 auto;max-width:168px;border:1px solid rgba(64,164,192,.3);border-radius:4px;color:#c7fbf6;background:rgba(3,20,34,.8);font:600 10px/1 inherit;outline:0;cursor:pointer;text-overflow:ellipsis}
 .region-select option{color:#dff8ff;background:#0a2436}
 .toolbar-divider{width:1px;align-self:stretch;margin:2px 3px;background:rgba(105,162,182,.23)}
-@media(max-width:900px){.region-select{max-width:118px;font-size:9px}}
-@media(max-width:700px){.region-select{max-width:92px;height:25px;font-size:8px}}
+@media(max-width:900px){.region-select{max-width:96px;font-size:9px}}
+@media(max-width:700px){.region-select{max-width:78px;height:25px;font-size:8px}}
+
+/* ---- 小屏分级精简：次要工具按宽度收起，保住核心图层与放大 ---- */
+@media(max-width:1150px){.tool-select,.tool-compare{display:none}.map-toolbar-right button span{display:none}.map-toolbar-right .maximize-button span{display:inline}.map-toolbar button{padding:0 7px}}
+@media(max-width:980px){.tool-hotspot,.tool-contour{display:none}.map-replay{top:64px}.roi-card{width:206px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}
