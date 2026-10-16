@@ -88,8 +88,8 @@
     </div>
 
     <div class="map-toolbar map-toolbar-left" role="tablist" aria-label="地图显示模式">
-      <button type="button" role="tab" :aria-selected="displayMode === '3d'" :class="{ active: displayMode === '3d' }" @click="switchDisplayMode('3d')">3D 地球</button>
-      <button type="button" role="tab" :aria-selected="displayMode === '2d'" :class="{ active: displayMode === '2d' }" @click="switchDisplayMode('2d')">2D 地图</button>
+      <button type="button" role="tab" :aria-selected="displayMode === '3d'" :class="{ active: displayMode === '3d' }" @click="switchDisplayMode('3d')"><span>3D 地球</span></button>
+      <button type="button" role="tab" :aria-selected="displayMode === '2d'" :class="{ active: displayMode === '2d' }" @click="switchDisplayMode('2d')"><span>2D 地图</span></button>
       <!-- A6 · Niño 分区切换器 -->
       <select v-model="regionKey" class="region-select" aria-label="切换 ENSO 指数参考区">
         <option v-for="region in regionList" :key="region.key" :value="region.key">{{ region.label }}</option>
@@ -97,15 +97,15 @@
     </div>
 
     <div class="map-toolbar map-toolbar-right" role="group" aria-label="地图图层">
-      <button type="button" :class="{ active: currentLayer === 'wind' }" @click="switchLayer('wind')"><i class="el-icon-sort"></i>风场</button>
-      <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'sst' }" @click="switchLayer('sst')"><i class="el-icon-sunny"></i>海温</button>
-      <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'both' }" @click="switchLayer('both')"><i class="el-icon-copy-document"></i>叠加</button>
+      <button type="button" :class="{ active: currentLayer === 'wind' }" @click="switchLayer('wind')"><i class="el-icon-sort"></i><span>风场</span></button>
+      <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'sst' }" @click="switchLayer('sst')"><i class="el-icon-sunny"></i><span>海温</span></button>
+      <button type="button" :disabled="!hasSst" :class="{ active: currentLayer === 'both' }" @click="switchLayer('both')"><i class="el-icon-copy-document"></i><span>叠加</span></button>
       <span class="toolbar-divider" aria-hidden="true"></span>
-      <button type="button" class="tool-hotspot" :disabled="!hasSst" :class="{ active: hotspotsOn }" title="冷暖异常热点检测" @click="toggleHotspots"><i class="el-icon-place"></i>热点</button>
-      <button type="button" class="tool-contour" :disabled="!hasSst" :class="{ active: contoursOn }" title="距平等值线" @click="toggleContours"><i class="el-icon-s-operation"></i>等值线</button>
-      <button type="button" class="tool-profile" :disabled="!hasSst" :class="{ active: profileOn }" title="纬向剖面抽屉" @click="toggleProfile"><i class="el-icon-data-analysis"></i>剖面</button>
-      <button v-if="displayMode === '2d'" type="button" class="tool-select" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i>框选</button>
-      <button v-if="displayMode === '2d' && canCompare" type="button" class="tool-compare" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i>对比</button>
+      <button type="button" class="tool-hotspot" :disabled="!hasSst" :class="{ active: hotspotsOn }" title="冷暖异常热点检测" @click="toggleHotspots"><i class="el-icon-place"></i><span>热点</span></button>
+      <button type="button" class="tool-contour" :disabled="!hasSst" :class="{ active: contoursOn }" title="距平等值线" @click="toggleContours"><i class="el-icon-s-operation"></i><span>等值线</span></button>
+      <button type="button" class="tool-profile" :disabled="!hasSst" :class="{ active: profileOn }" title="纬向剖面抽屉" @click="toggleProfile"><i class="el-icon-data-analysis"></i><span>剖面</span></button>
+      <button v-if="displayMode === '2d'" type="button" class="tool-select" :disabled="!hasSst" :class="{ active: selectModeOn }" title="框选区域诊断" @click="toggleSelectMode"><i class="el-icon-crop"></i><span>框选</span></button>
+      <button v-if="displayMode === '2d' && canCompare" type="button" class="tool-compare" :class="{ active: compareOn }" title="与上一帧卷帘对比" @click="toggleCompare"><i class="el-icon-switch-button"></i><span>对比</span></button>
       <button type="button" class="maximize-button" :aria-label="maximized ? '还原地图大小' : '放大地图'" :title="maximized ? '还原地图大小' : '放大地图'" @click="$emit('toggle-maximize')"><i :class="maximized ? 'el-icon-close' : 'el-icon-full-screen'"></i><span>{{ maximized ? '还原' : '放大' }}</span></button>
     </div>
 
@@ -869,6 +869,7 @@ export default {
       this.hasSst = true
       this.externalSstActive = true
       this.applyReplayWind()
+      this.updateNinoRegionVisibility()
       if (this.sstLayer) {
         this.sstLayer.setAnomalyMode(this.sstMode === 'anomaly')
         this.sstLayer.setData(this.sstData)
@@ -1910,7 +1911,7 @@ export default {
 
 /* ---- 小屏分级精简：按钮图标化 → 隐藏次要工具 → 折叠覆盖层 ----
    注意：.map-toolbar button 有 display:inline-flex，隐藏规则必须用更高特异性 */
-@media(max-width:1450px){
+@media(max-width:1600px){
   .map-toolbar{max-width:calc(100% - 24px)}
   .map-toolbar-left{flex:0 1 auto;min-width:0}
   .map-toolbar-right{flex:1 1 auto;min-width:0;justify-content:flex-end}
@@ -1918,10 +1919,10 @@ export default {
   .map-toolbar-right .maximize-button span{display:inline}
   .map-toolbar button{padding:0 7px}
   .map-toolbar .tool-select,.map-toolbar .tool-compare{display:none}
-  .roi-card{width:206px}
+  .roi-card{width:198px}
   .map-replay{top:58px}
 }
-@media(max-width:1100px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:190px}}
+@media(max-width:1100px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:186px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}
