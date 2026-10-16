@@ -251,17 +251,25 @@
         <div class="replay-confirm-picker">
           <div class="picker-head">
             <span>选择回放对象</span>
-            <small>共 {{ confirmOptions.length }} 项{{ confirmFilter ? ' · 筛选出 ' + confirmFilteredOptions.length + ' 项' : '' }}</small>
+            <small>共 {{ confirmOptions.length }} 项{{ pickerOpen && confirmFilter ? ' · 筛选出 ' + confirmFilteredOptions.length + ' 项' : '' }}</small>
           </div>
-          <input v-model="confirmFilter" class="picker-filter" type="text" :placeholder="replayConfirm.mode === 'model' ? '输入年份筛选起报月份（如 2025）' : '输入年份或类型筛选（如 1997、拉尼娜）'" @keydown.enter.stop.prevent />
-          <div class="picker-list" role="listbox" aria-label="可选回放对象">
-            <button v-for="option in confirmFilteredOptions" :key="option.id" type="button" role="option" :aria-selected="option.id === replayConfirm.selectedId" class="picker-item" :class="{ selected: option.id === replayConfirm.selectedId, 'no-data': option.hasData === false }" @click="selectConfirmOption(option.id)">
-              <span class="picker-dot" :class="option.tone"></span>
-              <span class="picker-copy"><strong>{{ option.label }}</strong><small>{{ option.meta }}</small></span>
-              <em v-if="option.hasData === false" class="picker-flag">无逐月数据</em>
-              <i v-if="option.id === replayConfirm.selectedId" class="el-icon-check"></i>
+          <div class="picker-select" :class="{ open: pickerOpen }">
+            <button ref="pickerTrigger" type="button" class="picker-trigger" :aria-expanded="pickerOpen ? 'true' : 'false'" aria-haspopup="listbox" @click="togglePickerOpen">
+              <span class="picker-dot" :class="confirmCurrentOption.tone"></span>
+              <span class="picker-copy"><strong>{{ confirmCurrentOption.label }}</strong><small>{{ confirmCurrentOption.meta }}</small></span>
+              <i class="picker-caret el-icon-arrow-down"></i>
             </button>
-            <div v-if="!confirmFilteredOptions.length" class="picker-empty">没有匹配的回放对象，请调整筛选关键字</div>
+            <div v-if="pickerOpen" class="picker-dropdown">
+              <input ref="pickerFilter" v-model="confirmFilter" class="picker-filter" type="text" :placeholder="replayConfirm.mode === 'model' ? '输入年份筛选起报月份（如 2025）' : '输入年份或类型筛选（如 1997、拉尼娜）'" @keydown.enter.stop.prevent />
+              <div class="picker-list" role="listbox" aria-label="可选回放对象">
+                <button v-for="option in confirmFilteredOptions" :key="option.id" type="button" role="option" :aria-selected="option.id === replayConfirm.selectedId" class="picker-item" :class="{ selected: option.id === replayConfirm.selectedId }" @click="selectConfirmOption(option.id)">
+                  <span class="picker-dot" :class="option.tone"></span>
+                  <span class="picker-copy"><strong>{{ option.label }}</strong><small>{{ option.meta }}</small></span>
+                  <i v-if="option.id === replayConfirm.selectedId" class="el-icon-check"></i>
+                </button>
+                <div v-if="!confirmFilteredOptions.length" class="picker-empty">没有匹配的回放对象，请调整筛选关键字</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="replay-confirm-meta">
@@ -349,6 +357,7 @@ export default {
       liveStatusVisible: false,
       controlCollapsed: false,
       confirmFilter: '',
+      pickerOpen: false,
       replayConfirm: { visible: false, mode: 'event', selectedId: '' },
       layerChoice: 'combined',
       scrubbing: false,
@@ -460,8 +469,7 @@ export default {
             id: option.id,
             label: option.label,
             meta: `轨迹峰值 ${replay.peak} · ${replay.series.length} 个月预测`,
-            tone: 'model',
-            hasData: true
+            tone: 'model'
           }
         })
       }
@@ -469,9 +477,12 @@ export default {
         id: event.id,
         label: event.label,
         meta: `${event.type} · ${event.start} 至 ${event.end} · 峰值 ${event.peak}`,
-        tone: event.type && event.type.indexOf('拉尼娜') > -1 ? 'cool' : 'warm',
-        hasData: !!event.hasData
+        tone: event.type && event.type.indexOf('拉尼娜') > -1 ? 'cool' : 'warm'
       }))
+    },
+    confirmCurrentOption() {
+      const options = this.confirmOptions
+      return options.find(option => option.id === this.replayConfirm.selectedId) || options[0] || { label: '—', meta: '', tone: 'warm' }
     },
     confirmFilteredOptions() {
       const keyword = String(this.confirmFilter || '').trim().toLowerCase()
@@ -1119,6 +1130,10 @@ export default {
     },
     handleKeydown(event) {
       if (event.key === 'Escape' && this.replayConfirm.visible) {
+        if (this.pickerOpen) {
+          this.pickerOpen = false
+          return
+        }
         this.cancelReplayConfirm()
         return
       }
@@ -1170,6 +1185,7 @@ export default {
     },
     openReplayConfirm(mode) {
       this.confirmFilter = ''
+      this.pickerOpen = false
       this.replayConfirm = {
         visible: true,
         mode,
@@ -1180,15 +1196,34 @@ export default {
         if (card && typeof card.focus === 'function') card.focus()
       })
     },
+    togglePickerOpen() {
+      this.pickerOpen = !this.pickerOpen
+      if (!this.pickerOpen) return
+      this.$nextTick(() => {
+        const input = this.$refs.pickerFilter
+        if (input && typeof input.focus === 'function') input.focus()
+        // 打开时把当前选中项滚动到列表中部，便于就近滑动选择
+        const list = this.$el.querySelector('.picker-list')
+        const selected = this.$el.querySelector('.picker-item.selected')
+        if (list && selected) list.scrollTop = Math.max(0, selected.offsetTop - list.clientHeight / 2)
+      })
+    },
     selectConfirmOption(id) {
       this.replayConfirm.selectedId = id
+      this.pickerOpen = false
+      this.$nextTick(() => {
+        const trigger = this.$refs.pickerTrigger
+        if (trigger && typeof trigger.focus === 'function') trigger.focus()
+      })
     },
     cancelReplayConfirm() {
+      this.pickerOpen = false
       this.replayConfirm = { ...this.replayConfirm, visible: false }
     },
     confirmReplayPlayback() {
       const mode = this.replayConfirm.mode
       const targetId = this.replayConfirm.selectedId
+      this.pickerOpen = false
       this.replayConfirm = { visible: false, mode, selectedId: targetId }
       // 应用确认框中所选的回放对象
       if (mode === 'model') {
@@ -1628,7 +1663,7 @@ export default {
 @keyframes rcPop{from{opacity:.6;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 @media(max-width:900px){.history-mode-banner{flex-wrap:wrap;gap:6px}.banner-hint{display:none}}
 @media(max-width:620px){.screen-title .screen-mode-chip{margin-top:1px;padding:1px 7px;font-size:7px}.replay-confirm-meta{grid-template-columns:1fr}.replay-confirm-card{max-height:82vh}}
-@media(prefers-reduced-motion:reduce){.replay-confirm-mask,.replay-confirm-card{animation:none}.history-mode-banner .banner-dot{animation:none}.screen-mode-chip{transition:none}}
+@media(prefers-reduced-motion:reduce){.replay-confirm-mask,.replay-confirm-card{animation:none}.history-mode-banner .banner-dot{animation:none}.screen-mode-chip{transition:none}.picker-dropdown{animation:none}}
 
 /* ---- B16 · 数据控制面板收起/展开 ---- */
 .history-collapse-toggle{display:flex;align-items:center;gap:4px;flex:0 0 auto;padding:5px 8px;border:1px solid rgba(83,162,181,.25);border-radius:4px;color:#8fb7c5;background:rgba(14,65,84,.2);font-family:inherit;font-size:9px;cursor:pointer;transition:color .18s,border-color .18s}
@@ -1641,14 +1676,20 @@ export default {
 .picker-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .picker-head>span{color:#a9c3cf;font-size:9px;letter-spacing:.3px}
 .picker-head small{color:#6f8c9d;font-size:8px}
-.picker-filter{display:block;box-sizing:border-box;width:100%;margin-top:7px;padding:7px 9px;border:1px solid rgba(74,140,166,.3);border-radius:5px;background:rgba(5,25,40,.8);color:#d9eef4;font-family:inherit;font-size:10px;outline:0}
+.picker-select{position:relative;margin-top:7px}
+.picker-trigger{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid rgba(74,140,166,.32);border-radius:6px;background:rgba(6,30,47,.62);color:#d7ecf3;font-family:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.picker-trigger:hover{border-color:var(--dlg-line)}
+.picker-select.open .picker-trigger{border-color:var(--dlg-accent);background:var(--dlg-fill)}
+.picker-caret{margin-left:auto;flex:0 0 auto;color:#8fb2bd;font-size:11px;transition:transform .18s}
+.picker-select.open .picker-caret{transform:rotate(180deg)}
+.picker-dropdown{margin-top:6px;padding:8px;border:1px solid rgba(74,140,166,.3);border-radius:6px;background:rgba(5,25,40,.72);animation:rcFade .16s ease-out both}
+.picker-filter{display:block;box-sizing:border-box;width:100%;padding:7px 9px;border:1px solid rgba(74,140,166,.3);border-radius:5px;background:rgba(5,25,40,.8);color:#d9eef4;font-family:inherit;font-size:10px;outline:0}
 .picker-filter:focus{border-color:var(--dlg-line)}
 .picker-filter::placeholder{color:#5f7c8d}
-.picker-list{display:flex;flex-direction:column;gap:4px;margin-top:7px;max-height:170px;overflow:auto;padding-right:3px;scrollbar-width:thin}
+.picker-list{position:relative;display:flex;flex-direction:column;gap:4px;margin-top:7px;max-height:170px;overflow:auto;padding-right:3px;scrollbar-width:thin}
 .picker-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:1px solid rgba(74,140,166,.22);border-radius:5px;background:rgba(6,30,47,.5);color:#cfe4ec;font-family:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
 .picker-item:hover{border-color:var(--dlg-line);background:rgba(10,44,62,.66)}
 .picker-item.selected{border-color:var(--dlg-accent);background:var(--dlg-fill)}
-.picker-item.no-data{opacity:.78}
 .picker-item>i{margin-left:auto;flex:0 0 auto;color:var(--dlg-accent);font-size:12px}
 .picker-dot{flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#ffad69;box-shadow:0 0 7px #ffad69}
 .picker-dot.cool{background:#4fd4dc;box-shadow:0 0 7px #4fd4dc}
@@ -1656,8 +1697,6 @@ export default {
 .picker-copy{display:flex;min-width:0;flex-direction:column;gap:2px}
 .picker-copy strong{color:#e6f6fa;font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .picker-copy small{color:#7c99aa;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.picker-flag{margin-left:auto;flex:0 0 auto;padding:2px 5px;border:1px solid rgba(255,176,102,.32);border-radius:3px;color:#d8a678;font-size:7px;font-style:normal;white-space:nowrap}
-.picker-flag+i{margin-left:6px}
 .picker-empty{padding:12px 8px;color:#6f8c9d;font-size:9px;text-align:center}
 .replay-confirm-card:focus{outline:0}
 @media(max-width:620px){.history-collapse-toggle span{display:none}.picker-list{max-height:148px}}
