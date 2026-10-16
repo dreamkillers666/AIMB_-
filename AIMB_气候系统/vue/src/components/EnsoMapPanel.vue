@@ -109,19 +109,17 @@
       <button type="button" class="maximize-button" :aria-label="maximized ? '还原地图大小' : '放大地图'" :title="maximized ? '还原地图大小' : '放大地图'" @click="$emit('toggle-maximize')"><i :class="maximized ? 'el-icon-close' : 'el-icon-full-screen'"></i><span>{{ maximized ? '还原' : '放大' }}</span></button>
     </div>
 
-    <!-- A3 · 框选区域诊断卡 -->
-    <div v-if="roiStats" class="roi-card" role="status">
+    <!-- A3 · 框选区域诊断卡（默认精简：均值 + 占比，极值悬停可见） -->
+    <div v-if="roiStats" class="roi-card" role="status" :title="`最大 ${roiStats.maxText} · 最小 ${roiStats.minText}`">
       <div class="roi-head">
         <span><i></i>区域诊断 · {{ roiStats.coord }}</span>
         <button type="button" @click="clearSelection">关闭</button>
       </div>
       <div class="roi-grid">
         <span>区域均值</span><strong :class="roiToneClass">{{ roiStats.meanText }}</strong>
-        <span>最大</span><strong>{{ roiStats.maxText }}</strong>
-        <span>最小</span><strong>{{ roiStats.minText }}</strong>
         <span>{{ roiStats.shareLabel }}</span><strong>{{ roiStats.shareText }}</strong>
       </div>
-      <button type="button" class="roi-ai" @click="askRoiAi"><i class="el-icon-cpu"></i>AI 解读该区域</button>
+      <button v-if="!roiStats.empty" type="button" class="roi-ai" @click="askRoiAi"><i class="el-icon-cpu"></i>AI 解读该区域</button>
     </div>
 
     <!-- A8 · 纬向剖面抽屉（2D/3D 通用，小屏可折叠） -->
@@ -837,8 +835,8 @@ export default {
     this.applyExternalSst()
     this.loadRealWind()
     this.pollTimer = window.setInterval(this.refreshRealWind, 30 * 60 * 1000)
-    // 小屏默认收起剖面抽屉，减少遮挡
-    if (typeof window !== 'undefined' && window.innerWidth <= 1300) this.profileCollapsed = true
+    // 剖面抽屉默认收起（只留标题条），需要时点箭头展开，避免遮挡地图
+    this.profileCollapsed = true
   },
   beforeDestroy() {
     this.destroyed = true
@@ -1676,7 +1674,17 @@ export default {
       const westText = `${Math.abs(wrap(west)).toFixed(0)}°${wrap(west) >= 0 ? 'E' : 'W'}`
       const eastText = `${Math.abs(wrap(east)).toFixed(0)}°${wrap(east) >= 0 ? 'E' : 'W'}`
       const stats = this.gridStats(south, north, west, east)
-      if (!stats) { this.roiStats = null; return }
+      if (!stats) {
+        // 整框都在缺测区（高纬海冰/陆地）时给出提示，而不是静默无响应
+        this.roiStats = {
+          coord: `${south.toFixed(0)}~${north.toFixed(0)}° · ${westText}~${eastText}`,
+          meanText: '无有效数据',
+          maxText: '—', minText: '—',
+          shareLabel: '暖异常占比', shareText: '—',
+          tone: '', empty: true
+        }
+        return
+      }
       const anomaly = this.sstMode === 'anomaly'
       const unit = '℃'
       this.roiStats = {
@@ -1902,7 +1910,7 @@ export default {
 
 /* ---- 小屏分级精简：按钮图标化 → 隐藏次要工具 → 折叠覆盖层 ----
    注意：.map-toolbar button 有 display:inline-flex，隐藏规则必须用更高特异性 */
-@media(max-width:1250px){
+@media(max-width:1450px){
   .map-toolbar{max-width:calc(100% - 24px)}
   .map-toolbar-left{flex:0 1 auto;min-width:0}
   .map-toolbar-right{flex:1 1 auto;min-width:0;justify-content:flex-end}
@@ -1910,10 +1918,10 @@ export default {
   .map-toolbar-right .maximize-button span{display:inline}
   .map-toolbar button{padding:0 7px}
   .map-toolbar .tool-select,.map-toolbar .tool-compare{display:none}
-  .roi-grid>:nth-child(n+3):nth-child(-n+6){display:none}
+  .roi-card{width:206px}
+  .map-replay{top:58px}
 }
-@media(max-width:1150px){.roi-card{width:212px}}
-@media(max-width:900px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:196px}}
+@media(max-width:1100px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:190px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}
