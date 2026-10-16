@@ -1909,7 +1909,7 @@ export default {
 @media(max-width:900px){.region-select{max-width:96px;font-size:9px}}
 @media(max-width:700px){.region-select{max-width:78px;height:25px;font-size:8px}}
 
-/* ---- 小屏分级精简：按钮图标化 → 隐藏次要工具 → 折叠覆盖层 ----
+/* ---- 小屏分级精简：按钮图标化（文字保留在 title 悬停提示）----
    注意：.map-toolbar button 有 display:inline-flex，隐藏规则必须用更高特异性 */
 @media(max-width:1600px){
   .map-toolbar{max-width:calc(100% - 24px)}
@@ -1917,12 +1917,12 @@ export default {
   .map-toolbar-right{flex:1 1 auto;min-width:0;justify-content:flex-end}
   .map-toolbar-right button span{display:none}
   .map-toolbar-right .maximize-button span{display:inline}
-  .map-toolbar button{padding:0 7px}
-  .map-toolbar .tool-select,.map-toolbar .tool-compare{display:none}
+  .map-toolbar button{padding:0 6px}
+  .map-toolbar-right{gap:3px}
   .roi-card{width:198px}
   .map-replay{top:58px}
 }
-@media(max-width:1100px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour{display:none}.map-replay{top:64px}.roi-card{width:186px}}
+@media(max-width:900px){.map-toolbar .tool-hotspot,.map-toolbar .tool-contour,.map-toolbar .tool-select,.map-toolbar .tool-compare{display:none}.map-replay{top:64px}.roi-card{width:186px}}
 
 /* ---- A4 · 热点标记 ---- */
 .enso-map-panel>>>.hotspot-icon{width:0;height:0}
