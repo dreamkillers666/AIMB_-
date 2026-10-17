@@ -355,7 +355,7 @@ export default {
       modelStartOptions,
       mapMaximized: false,
       liveStatusVisible: false,
-      controlCollapsed: false,
+      controlCollapsed: true,
       confirmFilter: '',
       pickerOpen: false,
       replayConfirm: { visible: false, mode: 'event', selectedId: '' },

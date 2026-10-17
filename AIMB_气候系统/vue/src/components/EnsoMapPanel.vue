@@ -836,8 +836,7 @@ export default {
     this.applyExternalSst()
     this.loadRealWind()
     this.pollTimer = window.setInterval(this.refreshRealWind, 30 * 60 * 1000)
-    // 剖面抽屉默认收起（只留标题条），需要时点箭头展开，避免遮挡地图
-    this.profileCollapsed = true
+    // 剖面抽屉默认展开（用户要求，原默认收起），仍可通过标题条箭头收起
   },
   beforeDestroy() {
     this.destroyed = true
