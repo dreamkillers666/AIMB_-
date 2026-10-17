@@ -103,6 +103,23 @@ function placeholder(ctx, x, y, w, h, text) {
   ctx.textAlign = 'left'
 }
 
+function truncateText(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text
+  let out = text
+  while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) out = out.slice(0, -1)
+  return `${out}…`
+}
+
+function miniBar(ctx, x, y, w, ratio, color) {
+  ctx.fillStyle = 'rgba(30, 80, 100, 0.55)'
+  roundRect(ctx, x, y, w, 6, 3)
+  ctx.fill()
+  const fillW = Math.max(3, Math.min(1, Math.max(0, ratio)) * w)
+  ctx.fillStyle = color
+  roundRect(ctx, x, y, fillW, 6, 3)
+  ctx.fill()
+}
+
 // 纬向剖面小图：离屏 canvas，PNG 合成与打印页共用同一份渲染
 export function renderProfileChart(points, isAnomaly, width = 472, height = 116) {
   const canvas = document.createElement('canvas')
@@ -177,10 +194,10 @@ export function renderProfileChart(points, isAnomaly, width = 472, height = 116)
   return canvas
 }
 
-// 监测简报 PNG：1240×924 深色排版，图表以 getDataURL 位图嵌入，样式与页面一致
+// 监测简报 PNG：1240×1140 深色排版，图表以 getDataURL 位图嵌入，全部面板数据入版
 export async function composeBriefingCanvas(payload) {
   const W = 1240
-  const H = 924
+  const H = 1140
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
@@ -331,27 +348,126 @@ export async function composeBriefingCanvas(payload) {
   }
   ctx.restore()
 
+  // 面板数据区：海气实时监测 / 海洋热含量 / 关键气候信号 / 区域影响信号
+  const panels = payload.panels || {}
+  const phase = panels.phase || {}
+  const observation = phase.observation || {}
+  const heat = panels.heat || []
+  const signals = panels.signals || []
+  const impacts = panels.impacts || {}
+  const impactLevels = impacts.levels || []
+  const panelW = 573
+  const panelHeader = (x, y, title, remark) => {
+    ctx.fillStyle = '#8fd7e0'
+    ctx.font = `10px ${FONT}`
+    ctx.fillText(title, x + 14, y + 20)
+    if (remark) {
+      ctx.fillStyle = '#ffb066'
+      ctx.font = `600 11px ${FONT}`
+      ctx.textAlign = 'right'
+      ctx.fillText(truncateText(ctx, remark, 260), x + panelW - 14, y + 20)
+      ctx.textAlign = 'left'
+    }
+  }
+  // 1 · 海气实时监测
+  panel(ctx, 40, 814, panelW, 107)
+  panelHeader(40, 814, '海 气 实 时 监 测', `当前阶段 · ${phase.title || '—'}`)
+  const obsRows = [
+    ['东太平洋 SST', observation.east || '—'],
+    ['信风距平', observation.wind === undefined || observation.wind === '—' ? '—' : `${observation.wind} m/s`],
+    ['暖水体积', observation.volume === undefined || observation.volume === '—' ? '—' : `${observation.volume}%`],
+    ['阈值进度', phase.threshold == null ? '—' : String(phase.threshold)]
+  ]
+  obsRows.forEach((row, index) => {
+    const y = 852 + index * 16
+    ctx.fillStyle = '#7c99aa'
+    ctx.font = `10px ${FONT}`
+    ctx.fillText(row[0], 54, y)
+    ctx.fillStyle = '#E3F5FB'
+    ctx.font = `600 11px ${FONT}`
+    ctx.fillText(row[1], 170, y)
+  })
+  // 2 · 海洋热含量变化
+  panel(ctx, 627, 814, panelW, 107)
+  panelHeader(627, 814, '海 洋 热 含 量 变 化', '')
+  if (heat.length) {
+    heat.slice(0, 4).forEach((item, index) => {
+      const y = 852 + index * 16
+      ctx.fillStyle = '#7c99aa'
+      ctx.font = `10px ${FONT}`
+      ctx.fillText(item.name, 641, y)
+      miniBar(ctx, 731, y - 7, 200, (item.value || 0) / 100, '#3ec9b8')
+      ctx.fillStyle = '#E3F5FB'
+      ctx.font = `600 10px ${FONT}`
+      ctx.textAlign = 'right'
+      ctx.fillText(item.label || '—', 1186, y)
+      ctx.textAlign = 'left'
+    })
+  } else {
+    placeholder(ctx, 641, 848, 545, 62, '暂无热含量数据')
+  }
+  // 3 · 关键气候信号
+  panel(ctx, 40, 937, panelW, 107)
+  panelHeader(40, 937, '关 键 气 候 信 号', '')
+  if (signals.length) {
+    signals.slice(0, 3).forEach((signal, index) => {
+      const y = 971 + index * 24
+      ctx.fillStyle = signal.tone === 'cool' ? '#8fd0f0' : '#ffad69'
+      ctx.font = `600 10px ${FONT}`
+      ctx.fillText(signal.time || '—', 54, y)
+      ctx.fillStyle = '#E3F5FB'
+      ctx.font = `600 11px ${FONT}`
+      ctx.fillText(truncateText(ctx, signal.title || '—', 190), 140, y)
+      ctx.fillStyle = '#7c99aa'
+      ctx.font = `10px ${FONT}`
+      ctx.fillText(truncateText(ctx, signal.detail || '', 415), 140, y + 13)
+    })
+  } else {
+    placeholder(ctx, 54, 955, 545, 78, '暂无气候信号')
+  }
+  // 4 · 区域影响信号
+  panel(ctx, 627, 937, panelW, 107)
+  panelHeader(627, 937, '区 域 影 响 信 号', `整体状态 · ${impacts.status || '—'}`)
+  if (impactLevels.length) {
+    impactLevels.slice(0, 3).forEach((risk, index) => {
+      const y = 975 + index * 20
+      ctx.fillStyle = '#7c99aa'
+      ctx.font = `10px ${FONT}`
+      ctx.fillText(risk.name, 641, y)
+      miniBar(ctx, 731, y - 7, 200, (risk.value || 0) / 100, risk.tone === 'cool' ? '#4fa8e0' : risk.tone === 'warm' ? '#ffad64' : '#3ec9b8')
+      ctx.fillStyle = '#E3F5FB'
+      ctx.font = `600 10px ${FONT}`
+      ctx.textAlign = 'right'
+      ctx.fillText(`${risk.value == null ? '—' : risk.value}%`, 1112, y)
+      ctx.fillStyle = risk.tone === 'cool' ? '#8fd0f0' : '#ffd0a2'
+      ctx.fillText(risk.label || '—', 1186, y)
+      ctx.textAlign = 'left'
+    })
+  } else {
+    placeholder(ctx, 641, 955, 545, 78, '暂无影响信号')
+  }
+
   // 页脚
   ctx.strokeStyle = 'rgba(61, 144, 172, 0.35)'
   ctx.beginPath()
-  ctx.moveTo(40, 820)
-  ctx.lineTo(W - 40, 820)
+  ctx.moveTo(40, 1064)
+  ctx.lineTo(W - 40, 1064)
   ctx.stroke()
   ctx.fillStyle = '#7c99aa'
   ctx.font = `11px ${FONT}`
-  ctx.fillText(`数据来源：${payload.meta.source} · ${payload.meta.colorScale} · ${payload.meta.baseline}`, 40, 846)
+  ctx.fillText(`数据来源：${payload.meta.source} · ${payload.meta.colorScale} · ${payload.meta.baseline}`, 40, 1090)
   if (payload.footerNote) {
     ctx.fillStyle = '#c9a86a'
-    ctx.fillText(payload.footerNote, 40, 868)
+    ctx.fillText(payload.footerNote, 40, 1112)
   }
   ctx.textAlign = 'right'
   ctx.fillStyle = '#58c6d2'
   ctx.font = `10px ${FONT}`
-  ctx.fillText('AIMB 气候系统 · ENSO 预测分析与监测平台', W - 40, 846)
+  ctx.fillText('AIMB 气候系统 · ENSO 预测分析与监测平台', W - 40, 1090)
   if (payload.cursorText) {
     ctx.fillStyle = '#7c99aa'
     ctx.font = `10px ${FONT}`
-    ctx.fillText(payload.cursorText, W - 40, 868)
+    ctx.fillText(payload.cursorText, W - 40, 1112)
   }
   ctx.textAlign = 'left'
   return canvas
@@ -361,6 +477,13 @@ export async function composeBriefingCanvas(payload) {
 export function buildBriefingHtml(payload) {
   const esc = value => String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const panels = payload.panels || {}
+  const phase = panels.phase || {}
+  const observation = phase.observation || {}
+  const heat = panels.heat || []
+  const signals = panels.signals || []
+  const impacts = panels.impacts || {}
+  const impactLevels = impacts.levels || []
   const imgTag = src => (src ? `<img src="${src}" alt="">` : `<div class="ph">暂无快照</div>`)
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -394,6 +517,19 @@ export function buildBriefingHtml(payload) {
   .charts .panel img, .charts .panel .ph { width: 100%; border-radius: 8px; display: block; }
   .footer { margin-top: 12px; border-top: 1px solid rgba(61,144,172,.35); padding-top: 10px; font-size: 11px; color: #7c99aa; display: flex; justify-content: space-between; }
   .ph { display: grid; place-items: center; color: #6f8c9d; background: rgba(6,30,47,.72); }
+  .panels-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .panels-grid .panel { min-height: 107px; }
+  .phase-tag { float: right; color: #ffb066; font-size: 11px; font-weight: 600; }
+  .kv { display: flex; align-items: center; gap: 10px; margin-top: 7px; font-size: 11px; }
+  .kv > span:first-child { width: 92px; color: #7c99aa; flex: 0 0 auto; }
+  .kv .bar { flex: 1; height: 6px; background: rgba(30,80,100,.55); border-radius: 3px; overflow: hidden; }
+  .kv .bar i { display: block; height: 100%; background: #3ec9b8; }
+  .kv em { font-style: normal; color: #e3f5fb; font-weight: 600; width: 56px; text-align: right; flex: 0 0 auto; }
+  .kv b { color: #e3f5fb; }
+  .sig { margin-top: 7px; font-size: 11px; line-height: 1.5; }
+  .sig b { color: #ffad69; margin-right: 8px; }
+  .sig strong { color: #e3f5fb; margin-right: 8px; }
+  .sig span { color: #7c99aa; }
 </style>
 </head>
 <body>
@@ -421,6 +557,23 @@ export function buildBriefingHtml(payload) {
       <div class="panel" style="flex:1"><span class="cap">未来 ENSO 状态概率（%）</span>${imgTag(payload.probImage)}</div>
     </div>
     <div class="row"><div class="panel" style="flex:1"><span class="cap">${esc(payload.profileCaption)}</span>${imgTag(payload.profileImage)}</div></div>
+  </div>
+  <div class="panels-grid">
+    <div class="panel"><span class="cap">海气实时监测</span><span class="phase-tag">当前阶段 · ${esc(phase.title || '—')}</span>
+      <div class="kv"><span>东太平洋 SST</span><b>${esc(observation.east || '—')}</b></div>
+      <div class="kv"><span>信风距平</span><b>${esc(observation.wind === undefined || observation.wind === '—' ? '—' : `${observation.wind} m/s`)}</b></div>
+      <div class="kv"><span>暖水体积</span><b>${esc(observation.volume === undefined || observation.volume === '—' ? '—' : `${observation.volume}%`)}</b></div>
+      <div class="kv"><span>阈值进度</span><b>${esc(phase.threshold == null ? '—' : String(phase.threshold))}</b></div>
+    </div>
+    <div class="panel"><span class="cap">海洋热含量变化</span>
+      ${heat.length ? heat.map(item => `<div class="kv"><span>${esc(item.name)}</span><span class="bar"><i style="width:${Number(item.value) || 0}%"></i></span><em>${esc(item.label || '—')}</em></div>`).join('') : '<div class="sig">暂无热含量数据</div>'}
+    </div>
+    <div class="panel"><span class="cap">关键气候信号</span>
+      ${signals.length ? signals.map(signal => `<div class="sig"><b>${esc(signal.time || '—')}</b><strong>${esc(signal.title || '—')}</strong><span>${esc(signal.detail || '')}</span></div>`).join('') : '<div class="sig">暂无气候信号</div>'}
+    </div>
+    <div class="panel"><span class="cap">区域影响信号</span><span class="phase-tag">整体状态 · ${esc(impacts.status || '—')}</span>
+      ${impactLevels.length ? impactLevels.map(risk => `<div class="kv"><span>${esc(risk.name)}</span><span class="bar"><i style="width:${Number(risk.value) || 0}%;background:${risk.tone === 'cool' ? '#4fa8e0' : '#ffad64'}"></i></span><em>${esc(risk.label || '—')}</em></div>`).join('') : '<div class="sig">暂无影响信号</div>'}
+    </div>
   </div>
   <div class="footer">
     <div>数据来源：${esc(payload.meta.source)} · ${esc(payload.meta.colorScale)} · ${esc(payload.meta.baseline)}${payload.footerNote ? ' · ' + esc(payload.footerNote) : ''}</div>
