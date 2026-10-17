@@ -140,7 +140,8 @@ export default {
       this.applyRegionVisibility();
     },
     region() {
-      this.applyRegionFocus();
+      this.rebuildRegionBounds();
+      if (!this.regionSuppressed) this.focusRegion();
     },
     pins: {
       deep: false,
@@ -238,13 +239,15 @@ export default {
         sstMesh.visible = false;
         group.add(sstMesh);
 
-        const ninoArea = this.createNino34Area();
+        // A6 · 参考区按当前选中分区构建，切换分区时由 rebuildRegionBounds 重建
+        const regionBounds = this.regionBounds();
+        const ninoArea = this.createRegionArea(regionBounds.west, regionBounds.east, regionBounds.south, regionBounds.north);
         group.add(ninoArea);
         const grid = this.createGraticule();
         group.add(grid);
-        const ninoBox = this.createNino34Outline();
+        const ninoBox = this.createRegionOutline(regionBounds.west, regionBounds.east, regionBounds.south, regionBounds.north);
         group.add(ninoBox);
-        const ninoCenter = toSpherePoint(215, 0, RADIUS + 0.055);
+        const ninoCenter = toSpherePoint(regionBounds.midLon, regionBounds.midLat, RADIUS + 0.055);
         const ninoMarker = new THREE.Mesh(
           new THREE.SphereGeometry(0.035, 20, 14),
           new THREE.MeshBasicMaterial({ color: 0xffe08a, depthTest: true })
@@ -255,16 +258,16 @@ export default {
           new THREE.SphereGeometry(0.105, 18, 12),
           new THREE.MeshBasicMaterial({ color: 0xffae50, transparent: true, opacity: 0.23, depthWrite: false })
         );
-        ninoGlow.position.copy(toSpherePoint(215, 0, RADIUS + 0.052));
+        ninoGlow.position.copy(toSpherePoint(this.regionInfo.glowLon, this.regionInfo.glowLat, RADIUS + 0.052));
         group.add(ninoGlow);
         const ninoHalo = new THREE.Mesh(
           new THREE.TorusGeometry(0.082, 0.006, 5, 42),
           new THREE.MeshBasicMaterial({ color: 0xffe29a, transparent: true, opacity: 0.9, depthWrite: false })
         );
-        ninoHalo.position.copy(toSpherePoint(215, 0, RADIUS + 0.063));
+        ninoHalo.position.copy(toSpherePoint(this.regionInfo.glowLon, this.regionInfo.glowLat, RADIUS + 0.063));
         ninoHalo.lookAt(ninoHalo.position.clone().multiplyScalar(2));
         group.add(ninoHalo);
-        const ninoLabelAnchor = toSpherePoint(242, 0, RADIUS + 0.035);
+        const ninoLabelAnchor = toSpherePoint(this.regionInfo.glowLon + 20, this.regionInfo.glowLat, RADIUS + 0.035);
 
         const atmosphere = new THREE.Mesh(
           new THREE.SphereGeometry(RADIUS + 0.075, 72, 48),
@@ -327,6 +330,7 @@ export default {
           lastFrame: 0,
           resizeObserver: null,
           drag: null,
+          fly: null,
           particles: null,
           streaks: null,
           particleState: [],
@@ -426,12 +430,8 @@ export default {
       return ring;
     },
 
-    createNino34Outline() {
+    createRegionOutline(west, east, south, north) {
       const points = [];
-      const west = 190;
-      const east = 240;
-      const south = -5;
-      const north = 5;
       for (let lon = west; lon <= east; lon += 2) points.push(toSpherePoint(lon, south, RADIUS + 0.02));
       for (let lat = south; lat <= north; lat += 1) points.push(toSpherePoint(east, lat, RADIUS + 0.02));
       for (let lon = east; lon >= west; lon -= 2) points.push(toSpherePoint(lon, north, RADIUS + 0.02));
@@ -446,11 +446,7 @@ export default {
       return new THREE.LineLoop(geometry, material);
     },
 
-    createNino34Area() {
-      const west = 190;
-      const east = 240;
-      const south = -5;
-      const north = 5;
+    createRegionArea(west, east, south, north) {
       const longitudeSteps = 50;
       const latitudeSteps = 10;
       const positions = [];
@@ -848,6 +844,7 @@ export default {
       state.pointerDown = (event) => {
         if (event.button !== undefined && event.button !== 0) return;
         state.drag = { x: event.clientX, y: event.clientY };
+        state.fly = null;
         canvas.style.cursor = 'grabbing';
         if (canvas.setPointerCapture && event.pointerId !== undefined) canvas.setPointerCapture(event.pointerId);
       };
@@ -866,6 +863,7 @@ export default {
       };
       state.wheel = (event) => {
         event.preventDefault();
+        state.fly = null;
       state.zoom = Math.max(3.6, Math.min(7.4, state.zoom + Math.sign(event.deltaY) * 0.32));
         state.camera.position.z = state.zoom * state.mobileZoom;
       };
@@ -916,6 +914,17 @@ export default {
       const motionEnabled = !state.reducedMotion;
       // 有点位探针时暂停自转，避免钉子转到背面"消失"
       if (motionEnabled && !state.drag && !this.pins.length) state.group.rotation.y += delta * 0.022;
+      // A6 · 分区定位飞行：缓动覆盖自转，拖动/滚轮会中断
+      if (state.fly) {
+        const fly = state.fly;
+        const progress = Math.min(1, (time - fly.start) / fly.duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        state.group.rotation.y = fly.fromY + (fly.toY - fly.fromY) * eased;
+        state.group.rotation.x = fly.fromX + (fly.toX - fly.fromX) * eased;
+        state.zoom = fly.fromZoom + (fly.toZoom - fly.fromZoom) * eased;
+        state.camera.position.z = state.zoom * state.mobileZoom;
+        if (progress >= 1) state.fly = null;
+      }
       if (motionEnabled || state.firstWindFrame) this.updateParticles(state.firstWindFrame ? Math.max(delta, 0.016) : delta);
       state.firstWindFrame = false;
       if (motionEnabled) {
@@ -968,6 +977,44 @@ export default {
         : 'translate(20px, -50%)';
       label.style.visibility = 'visible';
       label.style.opacity = '1';
+    },
+
+    // A6 · 分区边界：经度统一换算到 0–360°，跨日界线（如 Niño4）时 east 加 360
+    regionBounds() {
+      const region = this.regionInfo || {};
+      const westBase = Number.isFinite(region.west) ? region.west : -170;
+      const eastBase = Number.isFinite(region.east) ? region.east : -120;
+      const south = Number.isFinite(region.south) ? region.south : -5;
+      const north = Number.isFinite(region.north) ? region.north : 5;
+      const west = ((westBase % 360) + 360) % 360;
+      let east = ((eastBase % 360) + 360) % 360;
+      if (east <= west) east += 360;
+      return { west, east, south, north, midLon: (west + east) / 2, midLat: (south + north) / 2 };
+    },
+
+    // 分区切换：按新边界重建球面参考框 / 填充面 / 中心点，并同步光斑与标签锚点
+    rebuildRegionBounds() {
+      const state = this._three;
+      if (!state || !state.ninoBox) return;
+      const bounds = this.regionBounds();
+      const visible = this.regionShown;
+      [state.ninoArea, state.ninoBox].forEach((object) => {
+        if (!object) return;
+        state.group.remove(object);
+        object.geometry.dispose();
+        object.material.dispose();
+      });
+      state.ninoArea = this.createRegionArea(bounds.west, bounds.east, bounds.south, bounds.north);
+      state.ninoBox = this.createRegionOutline(bounds.west, bounds.east, bounds.south, bounds.north);
+      state.ninoArea.visible = visible;
+      state.ninoBox.visible = visible;
+      state.group.add(state.ninoArea);
+      state.group.add(state.ninoBox);
+      if (state.ninoMarker) {
+        state.ninoMarker.position.copy(toSpherePoint(bounds.midLon, bounds.midLat, RADIUS + 0.055));
+        state.ninoMarker.visible = visible;
+      }
+      this.applyRegionFocus();
     },
 
     // A6 · 分区切换：移动球面参考区光斑、光环与标签锚点
@@ -1211,10 +1258,30 @@ export default {
       const state = this._three;
       if (!state) return;
       // A6 · 定位到当前选中的参考区，而不是固定的 Niño3.4
-      const lon = this.regionInfo.glowLon;
-      state.group.rotation.set(0, Math.PI / 2 - (lon * Math.PI / 180), 0);
-      state.zoom = 4.55;
-      state.camera.position.set(0, 0, state.zoom * state.mobileZoom);
+      const targetY = Math.PI / 2 - (this.regionInfo.glowLon * Math.PI) / 180;
+      const targetZoom = 4.55;
+      if (state.reducedMotion) {
+        state.group.rotation.set(0, targetY, 0);
+        state.zoom = targetZoom;
+        state.camera.position.set(0, 0, state.zoom * state.mobileZoom);
+        state.fly = null;
+        return;
+      }
+      // 平滑飞行：经度取最短路径，缓动过渡到目标视角
+      const fromY = state.group.rotation.y;
+      let deltaY = (targetY - fromY) % (Math.PI * 2);
+      if (deltaY > Math.PI) deltaY -= Math.PI * 2;
+      if (deltaY < -Math.PI) deltaY += Math.PI * 2;
+      state.fly = {
+        fromY,
+        toY: fromY + deltaY,
+        fromX: state.group.rotation.x,
+        toX: 0,
+        fromZoom: state.zoom,
+        toZoom: targetZoom,
+        start: performance.now(),
+        duration: 750
+      };
     },
 
     disposeScene() {
