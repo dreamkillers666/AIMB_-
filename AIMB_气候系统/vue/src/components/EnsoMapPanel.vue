@@ -14,6 +14,7 @@
       :profile-on="profileOn"
       :profile-lat="profileLat"
       layout="center"
+      @globe-pick="onGlobePick"
       @unavailable="handleGlobeUnavailable"
     />
     <div v-show="displayMode === '2d'" ref="mapEl" class="map-2d" :class="{ 'is-selecting': selectModeOn }"></div>
@@ -53,13 +54,14 @@
       </div>
     </div>
 
-    <!-- A2 · 点位时序探针：点击落钉，随回放累积该点曲线 -->
-    <div v-if="displayMode === '2d' && pins.length" class="probe-pins" aria-label="点位时序探针">
+    <!-- A2 · 点位时序探针：点击落钉，随回放累积该点曲线（2D/3D 通用） -->
+    <div class="probe-pins" aria-label="点位时序探针">
       <div class="probe-pins-head">
         <span><i></i>点位时序探针</span>
-        <button type="button" @click="clearPins">清除</button>
+        <button type="button" :disabled="!pins.length" @click="clearPins">清除</button>
       </div>
-      <ul>
+      <p v-if="!pins.length" class="probe-pins-hint">在{{ displayMode === '3d' ? '地球' : '地图' }}上单击落钉（最多 4 个），重复点击同一位置可移除</p>
+      <ul v-else>
         <li v-for="pin in pins" :key="pin.id">
           <span class="pin-index">{{ pin.index }}</span>
           <div class="pin-body">
@@ -1082,6 +1084,8 @@ export default {
           else this.resizeMap()
           this.updateNinoRegionVisibility()
           this.applyLayerVisibility()
+          // 3D 模式下开启的热点/等值线/剖面，切回 2D 时按当前开关补建图层
+          this.refreshAnalysisLayers()
         })
       } else if (this.velocityLayer && this.velocityLayer.pause) {
         this.velocityLayer.pause()
@@ -1289,6 +1293,11 @@ export default {
     pinValueClass(pin) {
       if (this.sstMode !== 'anomaly') return {}
       return { 'warm-text': pin.currentText.indexOf('+') === 0, 'cool-text': pin.currentText.indexOf('−') === 0 }
+    },
+    // A2 · 3D 球面点击落钉：与 2D 地图 click 行为一致
+    onGlobePick(pick) {
+      if (!pick || !Number.isFinite(pick.lat) || !Number.isFinite(pick.lon)) return
+      this.togglePin(pick.lat, pick.lon)
     },
     togglePin(latitude, longitude) {
       const lon = (((longitude + 180) % 360) + 360) % 360 - 180
@@ -1994,4 +2003,8 @@ export default {
 
 /* 图例标题：明确当前色标是"距平"还是"绝对值"，避免与实时模式混淆 */
 .sst-legend-title{margin-bottom:5px;color:#9fc2d2;font-size:8px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 点位时序探针：常驻卡片（2D/3D），空态显示落钉引导 */
+.probe-pins-hint{margin:7px 0 0;color:#7c99aa;font-size:8px;line-height:1.7}
+.probe-pins-head button:disabled{opacity:.45;cursor:default}
 </style>

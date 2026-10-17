@@ -844,6 +844,7 @@ export default {
       state.pointerDown = (event) => {
         if (event.button !== undefined && event.button !== 0) return;
         state.drag = { x: event.clientX, y: event.clientY };
+        state.downAt = { x: event.clientX, y: event.clientY };
         state.fly = null;
         canvas.style.cursor = 'grabbing';
         if (canvas.setPointerCapture && event.pointerId !== undefined) canvas.setPointerCapture(event.pointerId);
@@ -857,9 +858,30 @@ export default {
         state.group.rotation.x = Math.max(-0.68, Math.min(0.68, state.group.rotation.x + dy * 0.004));
         event.preventDefault();
       };
-      state.pointerUp = () => {
+      state.pointerUp = (event) => {
+        const origin = state.downAt;
+        state.downAt = null;
         state.drag = null;
         canvas.style.cursor = 'grab';
+        // A2 · 3D 点击落钉：按下/弹起位移极小视为点击，射线求交地球反解经纬度
+        if (!origin) return;
+        const moved = Math.abs(event.clientX - origin.x) + Math.abs(event.clientY - origin.y);
+        if (moved > 5) return;
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1
+        ), state.camera);
+        const hit = raycaster.intersectObject(state.earth, false)[0];
+        if (!hit) return;
+        const local = state.group.worldToLocal(hit.point.clone());
+        const radius = local.length();
+        if (!radius) return;
+        const lat = Math.asin(Math.max(-1, Math.min(1, local.y / radius))) * 180 / Math.PI;
+        const lon = Math.atan2(local.z, -local.x) * 180 / Math.PI;
+        this.$emit('globe-pick', { lon, lat });
       };
       state.wheel = (event) => {
         event.preventDefault();
