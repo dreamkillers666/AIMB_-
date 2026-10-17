@@ -2,6 +2,7 @@
   <section class="enso-map-panel" :class="{ 'is-compact': compact, 'is-maximized': maximized }">
     <EnsoGlobe
       v-if="displayMode === '3d'"
+      ref="globeRef"
       :wind-data="windData"
       :sst-data="sstData"
       :sst-mode="sstMode"
@@ -1472,6 +1473,145 @@ export default {
       }
       if (!n) return null
       return { mean: sum / n, max, min, n, warmShare: warm / n, coldShare: cold / n, anomaly }
+    },
+    // ---- B23 · 导出中心：地图快照与导出数据 ----
+    async snapshotMap() {
+      try {
+        if (this.displayMode === '3d') {
+          const globe = this.$refs.globeRef
+          return globe && globe.snapshot ? globe.snapshot() : null
+        }
+        if (!this.map) return null
+        return await this.compose2dSnapshot()
+      } catch (error) {
+        return null
+      }
+    },
+    loadBaseMapImage() {
+      if (this._baseMapImg && this._baseMapImg.complete) return Promise.resolve(this._baseMapImg)
+      return new Promise(resolve => {
+        const img = new Image()
+        img.onload = () => { this._baseMapImg = img; resolve(img) }
+        img.onerror = () => resolve(null)
+        img.src = blueMarbleUrl
+      })
+    },
+    // 可视区可能跨世界副本（±180° 之外），按 360° 分段回调
+    forEachViewSegment(west, east, cb) {
+      const kStart = Math.floor((west + 180) / 360)
+      const kEnd = Math.floor((east + 180) / 360)
+      for (let k = kStart; k <= kEnd; k += 1) {
+        const segStart = Math.max(west, k * 360 - 180)
+        const segEnd = Math.min(east, k * 360 + 180)
+        if (segEnd > segStart) cb(k, segStart, segEnd)
+      }
+    },
+    async compose2dSnapshot() {
+      const bounds = this.map.getBounds()
+      const west = bounds.getWest()
+      const east = bounds.getEast()
+      const south = Math.max(-89.5, bounds.getSouth())
+      const north = Math.min(89.5, bounds.getNorth())
+      const W = 880
+      const H = Math.max(280, Math.min(520, Math.round(W * (north - south) / Math.max(1e-6, east - west))))
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#062033'
+      ctx.fillRect(0, 0, W, H)
+      const px = lon => (lon - west) / (east - west) * W
+      const py = lat => (north - lat) / (north - south) * H
+      // 底图：本地 Blue Marble 按 360° 分段铺进当前可视区
+      const img = await this.loadBaseMapImage()
+      if (img) {
+        const iw = img.naturalWidth || 4096
+        const ih = img.naturalHeight || 2048
+        this.forEachViewSegment(west, east, (k, segStart, segEnd) => {
+          const sx = (segStart - (k * 360 - 180)) / 360 * iw
+          const sw = (segEnd - segStart) / 360 * iw
+          const sy = (90 - north) / 180 * ih
+          const sh = (north - south) / 180 * ih
+          ctx.drawImage(img, sx, sy, sw, sh, px(segStart), 0, px(segEnd) - px(segStart), H)
+        })
+        ctx.fillStyle = 'rgba(4, 20, 32, 0.16)'
+        ctx.fillRect(0, 0, W, H)
+      }
+      // SST 叠加画布：与地图可视区一一对应，直接拉伸铺放
+      const sstCanvas = this.sstLayer && this.sstLayer._canvasLayer && this.sstLayer._canvasLayer._canvas
+      if (sstCanvas && this.currentLayer !== 'wind') ctx.drawImage(sstCanvas, 0, 0, W, H)
+      // 赤道虚线
+      ctx.strokeStyle = 'rgba(90, 220, 225, 0.4)'
+      ctx.setLineDash([7, 5])
+      ctx.beginPath()
+      ctx.moveTo(0, py(0))
+      ctx.lineTo(W, py(0))
+      ctx.stroke()
+      ctx.setLineDash([])
+      // Niño 参考区（实时模式显示，与地图行为一致）
+      if (!this.hasHistoryField) {
+        const region = this.activeRegion
+        const w0 = ((region.west % 360) + 360) % 360
+        let e0 = ((region.east % 360) + 360) % 360
+        if (e0 <= w0) e0 += 360
+        ctx.strokeStyle = 'rgba(255, 211, 106, 0.95)'
+        ctx.lineWidth = 1.6
+        this.forEachViewSegment(west, east, (k, segStart, segEnd) => {
+          const rStart = w0 + k * 360
+          const rEnd = e0 + k * 360
+          const s = Math.max(segStart, rStart)
+          const e = Math.min(segEnd, rEnd)
+          if (e <= s) return
+          ctx.strokeRect(px(s), py(region.north), px(e) - px(s), py(region.south) - py(region.north))
+        })
+      }
+      // 钉子：在可见的世界副本上绘制
+      const drawAtLons = (lon, cb) => {
+        ;[lon - 360, lon, lon + 360].forEach(value => {
+          if (value >= west && value <= east) cb(px(value))
+        })
+      }
+      this.pins.forEach(pin => {
+        drawAtLons(pin.lon, x => {
+          ctx.beginPath()
+          ctx.arc(x, py(pin.lat), 4.2, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(255, 214, 148, 0.95)'
+          ctx.fill()
+          ctx.strokeStyle = '#b7853f'
+          ctx.lineWidth = 1.2
+          ctx.stroke()
+          ctx.fillStyle = '#ffe3b0'
+          ctx.font = `600 11px "PingFang SC", "Microsoft YaHei", sans-serif`
+          ctx.fillText(String(pin.index), x + 6, py(pin.lat) - 6)
+        })
+      })
+      // 热点标注
+      if (this.hotspotsOn) {
+        ctx.font = `10px "PingFang SC", "Microsoft YaHei", sans-serif`
+        this.hotspotData.forEach(spot => {
+          drawAtLons(spot.lon, x => {
+            ctx.fillStyle = spot.tone === 'cool' ? '#8fd0f0' : '#ffad69'
+            ctx.fillText(spot.text, x + 5, py(spot.lat) + 4)
+          })
+        })
+      }
+      return canvas.toDataURL('image/png')
+    },
+    // 导出中心数据采集：钉子曲线、剖面、热点（2D/3D 同源）
+    getExportData() {
+      return {
+        region: { label: this.activeRegion.label, desc: this.activeRegion.desc, range: this.activeRegion.range },
+        pins: this.pins.map(pin => ({
+          index: pin.index,
+          coord: pin.coord,
+          lat: pin.lat,
+          lon: pin.lon,
+          currentText: pin.currentText,
+          series: (pin.series || []).map(item => ({ label: item.label, value: item.value }))
+        })),
+        profile: { on: this.profileOn, lat: this.profileLat, points: this.profilePoints },
+        hotspots: this.hotspotsOn ? this.hotspotData : []
+      }
     },
     // 场更新后统一刷新分析图层
     refreshAnalysisLayers() {

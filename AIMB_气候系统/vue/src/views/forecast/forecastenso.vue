@@ -36,6 +36,7 @@
       <div class="header-status">
         <span class="live-indicator"><i></i>系统运行正常</span>
         <span class="header-date">{{ nowDate }}</span>
+        <button type="button" class="export-center-button" :class="{ active: exportCenter.visible }" @click="openExportCenter"><i class="el-icon-download"></i><span>导出中心</span></button>
         <button
           type="button"
           class="realtime-status-button"
@@ -177,7 +178,7 @@
             <span class="map-heading-note">拖动旋转 · 滚轮缩放 · Niño3.4 核心区追踪</span>
           </div>
 
-          <enso-map-panel :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" :compare-field="mapCompareField" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
+          <enso-map-panel ref="mapPanel" :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" :compare-field="mapCompareField" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
           <div class="map-bottomline"><span><i></i>{{ historyMode ? (historyHasData ? historyCurrentMonthLabel + ' · 历史场' : historyActiveItem.label) : '遥感反演场正常' }}</span><span>{{ historyMode ? historyDataSource : 'NOAA OISST v2.1 · ERSST v5' }}</span><span>{{ historyMode ? (historyHasData ? '固定距平色标 −3 至 +3 ℃' : '距平基准期 1991–2020') : '绝对色标 −2 至 32 ℃' }}</span></div>
         </section>
         <div class="map-stat-row">
@@ -288,6 +289,41 @@
       </div>
     </div>
 
+    <!-- B23 · 数据与图表导出中心 -->
+    <div v-if="exportCenter.visible" class="replay-confirm-mask" @click.self="closeExportCenter">
+      <div ref="exportCard" class="export-center-card" role="dialog" aria-modal="true" aria-labelledby="exportCenterTitle" tabindex="-1" @keydown.enter.self="runExport">
+        <div class="replay-confirm-head">
+          <div><span class="panel-kicker">DATA EXPORT CENTER</span><h3 id="exportCenterTitle">数据与图表导出中心</h3></div>
+          <button type="button" class="replay-confirm-close" aria-label="关闭导出中心" @click="closeExportCenter"><i class="el-icon-close"></i></button>
+        </div>
+        <p class="export-intro">将当前监测数据与图表整合导出：简报保留图表样式与排版，数据包为结构化文件，导出失败时不会产生残缺文件。</p>
+        <div class="export-formats" role="radiogroup" aria-label="导出格式">
+          <button v-for="fmt in exportFormats" :key="fmt.key" type="button" role="radio" :aria-checked="exportCenter.format === fmt.key" class="export-format" :class="{ selected: exportCenter.format === fmt.key }" @click="selectExportFormat(fmt.key)">
+            <strong><i :class="fmt.icon"></i>{{ fmt.label }}</strong>
+            <small>{{ fmt.desc }}</small>
+          </button>
+        </div>
+        <div class="export-options">
+          <label><input v-model="exportCenter.includeMap" type="checkbox">包含地图快照</label>
+          <label><input v-model="exportCenter.includeCharts" type="checkbox">包含分析图表（PNG / PDF 简报）</label>
+        </div>
+        <div v-if="exportCenter.steps.length" class="export-progress" role="status">
+          <div class="export-progress-bar"><i :style="{ width: exportCenter.progress + '%' }" :class="{ failed: exportCenter.done && !exportCenter.success }"></i></div>
+          <ul>
+            <li v-for="(step, index) in exportCenter.steps" :key="index" :class="step.status">
+              <i :class="step.status === 'active' ? 'el-icon-loading' : step.status === 'done' ? 'el-icon-check' : step.status === 'error' ? 'el-icon-close' : 'el-icon-more'"></i>
+              <span>{{ step.label }}</span>
+            </li>
+          </ul>
+          <p v-if="exportCenter.done" class="export-result" :class="exportCenter.success ? 'ok' : 'fail'">{{ exportCenter.success ? '✓ 导出完成：' + exportCenter.resultName : '✕ 导出失败：' + exportCenter.errorText }}</p>
+        </div>
+        <div class="replay-confirm-actions">
+          <button type="button" class="confirm-secondary" :disabled="exportCenter.running" @click="closeExportCenter">{{ exportCenter.done ? '关闭' : '取消' }}</button>
+          <button type="button" class="confirm-primary" :disabled="exportCenter.running" @click="runExport"><i :class="exportCenter.running ? 'el-icon-loading' : 'el-icon-download'"></i>{{ exportCenter.running ? '正在导出…' : '开始导出' }}</button>
+        </div>
+      </div>
+    </div>
+
     <section class="module-workbench" aria-labelledby="moduleWorkbenchTitle">
       <div class="workbench-heading">
         <div><span class="panel-kicker">ENSO KNOWLEDGE &amp; TOOLS</span><h2 id="moduleWorkbenchTitle">专题分析工作台</h2><p>从实时监测继续进入背景知识、模型产品与可复核分析</p></div>
@@ -319,6 +355,7 @@ import AnimatedNumber from '@/components/AnimatedNumber.vue'
 import { historyEvents, modelStartOptions, modelReplay, fieldForPoint } from '@/data/ensoHistory'
 import { openAiBriefing, openAiChat } from '@/utils/aiBus'
 import { getModelReports } from '@/data/ensoReports'
+import { composeBriefingCanvas, buildBriefingHtml, buildSeriesCsv, buildDataJson, downloadText, downloadDataUrl, timestampedName, renderProfileChart } from '@/utils/ensoExport'
 
 const BOOT_LINES = [
   { text: 'LINK · NOAA OISST v2.1 观测网', state: 'OK' },
@@ -328,6 +365,13 @@ const BOOT_LINES = [
   { text: 'CAL · Niño3.4 / ONI 指数基线', state: '1991–2020' },
   { text: 'SYNC · ENSO 影响研判 Agent', state: 'ONLINE' }
 ]
+
+// 实时模式演示序列：指数图与导出中心共用同一份，保持口径一致
+const LIVE_INDEX = {
+  labels: ['MAM', 'AMJ', 'MJJ', 'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ'],
+  observed: [.2, .3, .5, .6, .7, .8, null, null, null],
+  forecast: [null, null, null, null, null, .8, .82, .75, .63]
+}
 
 export default {
   name: 'ForecastENSOScreen',
@@ -359,6 +403,7 @@ export default {
       confirmFilter: '',
       pickerOpen: false,
       replayConfirm: { visible: false, mode: 'event', selectedId: '' },
+      exportCenter: { visible: false, format: 'png', includeMap: true, includeCharts: true, running: false, done: false, success: false, steps: [], progress: 0, errorText: '', errorStack: '', resultName: '' },
       layerChoice: 'combined',
       scrubbing: false,
       // B1 · 启动自检
@@ -488,6 +533,14 @@ export default {
       const keyword = String(this.confirmFilter || '').trim().toLowerCase()
       if (!keyword) return this.confirmOptions
       return this.confirmOptions.filter(option => `${option.label} ${option.meta}`.toLowerCase().indexOf(keyword) > -1)
+    },
+    exportFormats() {
+      return [
+        { key: 'png', label: '监测简报 PNG', desc: '地图快照 + 图表 + 指标合成一页图片', icon: 'el-icon-picture-outline' },
+        { key: 'pdf', label: '监测简报 PDF', desc: '排版页面，浏览器打印 / 另存为 PDF', icon: 'el-icon-document' },
+        { key: 'csv', label: '指数时序 CSV', desc: '当前数据模式序列，Excel 可直接打开', icon: 'el-icon-tickets' },
+        { key: 'json', label: '监测数据包 JSON', desc: '指标 · 序列 · 钉子 · 剖面 · 热点全量', icon: 'el-icon-files' }
+      ]
     },
     modeBanner() {
       if (this.viewScope === 'live') {
@@ -1266,6 +1319,216 @@ export default {
       }
       this.$router.replace({ query }).catch(() => {}).then(after)
     },
+    // ---- B23 · 数据与图表导出中心 ----
+    openExportCenter() {
+      this.exportCenter.visible = true
+      this.$nextTick(() => {
+        const card = this.$refs.exportCard
+        if (card && typeof card.focus === 'function') card.focus()
+      })
+    },
+    closeExportCenter() {
+      if (this.exportCenter.running) return
+      this.exportCenter.visible = false
+      this.exportCenter.steps = []
+      this.exportCenter.progress = 0
+      this.exportCenter.done = false
+      this.exportCenter.success = false
+    },
+    selectExportFormat(key) {
+      if (!this.exportCenter.running) this.exportCenter.format = key
+    },
+    chartImage(key) {
+      try {
+        const chart = this.charts[key]
+        return chart ? chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#061c2d' }) : null
+      } catch (error) {
+        return null
+      }
+    },
+    mapSnapshot() {
+      const panel = this.$refs.mapPanel
+      if (!panel || !panel.snapshotMap) return Promise.resolve(null)
+      return panel.snapshotMap().catch(() => null)
+    },
+    buildExportData() {
+      const panel = this.$refs.mapPanel
+      const extras = panel && panel.getExportData
+        ? panel.getExportData()
+        : { region: { label: 'Niño3.4', desc: '赤道中东部太平洋', range: '5°N–5°S · 170°W–120°W' }, pins: [], profile: { on: false, lat: 0, points: [] }, hotspots: [] }
+      const isAnomaly = this.historyMode && this.historyHasData
+      return {
+        generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+        modeText: String(this.modeChipText).replace('当前数据 · ', ''),
+        accent: this.viewScope === 'event' ? '#ffb066' : this.viewScope === 'model' ? '#b697ff' : '#46dce5',
+        accentFill: this.viewScope === 'event' ? 'rgba(255, 176, 102, 0.14)' : this.viewScope === 'model' ? 'rgba(182, 151, 255, 0.14)' : 'rgba(70, 220, 229, 0.12)',
+        accentBright: this.viewScope === 'event' ? '#ffd7a8' : this.viewScope === 'model' ? '#dbcaff' : '#9df4ee',
+        scopeLabel: this.historyMode
+          ? `${this.historyActiveItem.label} · ${this.historyEventTimeLabel}`
+          : `实时观测 · 数据更新于 ${this.dataUpdatedAt}`,
+        regionLabel: `${extras.region.label}（${extras.region.desc}）· ${extras.region.range}`,
+        cursorText: this.historyMode ? `${this.historyCurrentMonthLabel} · 时间游标 ${this.currentIndexSafe + 1}/${this.historySeries.length}` : '',
+        kpi: [
+          { name: 'Niño3.4 海温距平', value: `${this.displayMonitor.nino34} ℃`, color: '#ffb066' },
+          { name: 'ONI · 3月滑动平均', value: `${this.displayMonitor.oni} ℃`, color: '#E3F5FB' },
+          { name: '南方涛动指数 SOI', value: String(this.displayMonitor.soi), color: '#5ba9e8' },
+          { name: '当前 ENSO 阶段', value: String(this.displayMonitor.status), color: '#ffc077', small: true }
+        ],
+        alert: this.alertLevel !== 'none' ? { title: this.alertTitle, value: this.alertValueText, tone: this.alertTone } : null,
+        pins: extras.pins,
+        profile: extras.profile,
+        hotspots: extras.hotspots,
+        meta: {
+          source: this.historyMode ? this.historyDataSource : 'NOAA OISST v2.1 · ERSST v5 · GFS 风场',
+          colorScale: this.historyHasData ? 'SSTA 固定色标 −3 ~ +3 ℃' : 'SST 绝对色标 −2 ~ 32 ℃',
+          baseline: '距平基准期 1991–2020'
+        },
+        seriesRows: this.buildSeriesRows()
+      }
+    },
+    buildSeriesRows() {
+      if (!this.historyMode) {
+        const rows = []
+        LIVE_INDEX.labels.forEach((label, index) => {
+          const observed = LIVE_INDEX.observed[index]
+          const forecast = LIVE_INDEX.forecast[index]
+          if (observed !== null) rows.push(['实时预测 · 观测', label, observed.toFixed(2), 'Niño3.4'])
+          if (forecast !== null) rows.push(['实时预测 · 预测', label, forecast.toFixed(2), 'LSTA-Swin 演示轨迹'])
+        })
+        return rows
+      }
+      const tag = `${this.historyType === 'model' ? '模型历史预测' : '历史事件'} · ${this.historyActiveItem.label}`
+      return this.historySeries.map(point => [
+        tag,
+        point.month,
+        point.value === null || point.value === undefined ? '' : Number(point.value).toFixed(2),
+        point.observed === null || point.observed === undefined ? '' : `观测 ${Number(point.observed).toFixed(2)}`
+      ])
+    },
+    buildExportSteps(format) {
+      if (format === 'png') return ['采集图表快照', '渲染地图快照', '合成简报排版', '生成并下载文件']
+      if (format === 'pdf') return ['采集图表快照', '渲染地图快照', '生成简报页面', '打开打印视图']
+      if (format === 'csv') return ['整理时序数据', '生成并下载 CSV']
+      return ['整理监测数据', '生成并下载 JSON']
+    },
+    openPrintWindow(html) {
+      const win = window.open('', '_blank')
+      if (!win) throw new Error('popup-blocked')
+      win.document.open()
+      win.document.write(html)
+      win.document.close()
+      return new Promise(resolve => {
+        let waited = 0
+        const check = () => {
+          const images = win.document.images
+          const ready = Array.prototype.every.call(images, img => img.complete)
+          if (ready || waited > 3000) return resolve()
+          waited += 120
+          window.setTimeout(check, 120)
+        }
+        check()
+      }).then(() => {
+        try { win.focus(); win.print() } catch (error) { /* 无头 / 禁打印环境忽略 */ }
+      })
+    },
+    async runExport() {
+      const ec = this.exportCenter
+      if (ec.running) return
+      ec.running = true
+      ec.done = false
+      ec.success = false
+      ec.errorText = ''
+      ec.resultName = ''
+      ec.progress = 0
+      const steps = this.buildExportSteps(ec.format)
+      ec.steps = steps.map(label => ({ label, status: 'pending' }))
+      const payload = { mapImage: null, indexImage: null, probImage: null, profileImage: null, footerNote: '' }
+      try {
+        for (let index = 0; index < steps.length; index += 1) {
+          ec.steps[index].status = 'active'
+          const step = steps[index]
+          if (step === '采集图表快照') {
+            if (ec.includeCharts) {
+              payload.indexImage = this.chartImage('index')
+              payload.probImage = this.chartImage('probability')
+            }
+          } else if (step === '渲染地图快照') {
+            if (ec.includeMap) {
+              payload.mapImage = await this.mapSnapshot()
+              if (!payload.mapImage) {
+                payload.footerNote = '地图快照不可用，已用占位图替代'
+                this.$message({ type: 'warning', duration: 3000, message: '地图快照生成失败，简报将以占位图替代' })
+              }
+            }
+          } else if (step === '合成简报排版') {
+            const base = this.buildExportData()
+            const profile = base.profile && base.profile.points ? base.profile.points : []
+            const isAnomaly = this.historyMode && this.historyHasData
+            payload.mapCaption = this.historyMode ? `地图快照 · ${base.modeText}` : '地图快照 · 绝对海温 + 信风场'
+            payload.profileCaption = `纬向剖面 · ${base.profile.lat}° 纬线${isAnomaly ? '（距平）' : '（海温）'}`
+            payload.profileImage = renderProfileChart(profile, isAnomaly).toDataURL('image/png')
+            const canvas = await composeBriefingCanvas({ ...base, ...payload })
+            payload.dataUrl = canvas.toDataURL('image/png')
+            ec.lastDataUrl = payload.dataUrl
+          } else if (step === '生成并下载文件') {
+            const name = timestampedName('ENSO监测简报', '.png')
+            downloadDataUrl(payload.dataUrl, name)
+            ec.resultName = name
+          } else if (step === '生成简报页面') {
+            const base = this.buildExportData()
+            const profile = base.profile && base.profile.points ? base.profile.points : []
+            const isAnomaly = this.historyMode && this.historyHasData
+            payload.mapCaption = payload.mapCaption || (this.historyMode ? `地图快照 · ${base.modeText}` : '地图快照 · 绝对海温 + 信风场')
+            payload.profileCaption = `纬向剖面 · ${base.profile.lat}° 纬线${isAnomaly ? '（距平）' : '（海温）'}`
+            payload.profileImage = payload.profileImage || renderProfileChart(profile, isAnomaly).toDataURL('image/png')
+            payload.html = buildBriefingHtml({ ...base, ...payload })
+          } else if (step === '打开打印视图') {
+            try {
+              await this.openPrintWindow(payload.html)
+              ec.resultName = '已打开打印视图（浏览器打印菜单选择「另存为 PDF」）'
+            } catch (error) {
+              const name = timestampedName('ENSO监测简报', '.html')
+              if (!downloadText(payload.html, name, 'text/html;charset=utf-8')) throw new Error('弹窗被拦截且自动下载失败')
+              ec.resultName = `${name}（弹窗被拦截，已下载 HTML，打开后可打印为 PDF）`
+            }
+          } else if (step === '整理时序数据') {
+            payload.rows = this.buildSeriesRows()
+          } else if (step === '生成并下载 CSV') {
+            const name = timestampedName('ENSO指数时序', '.csv')
+            if (!downloadText(buildSeriesCsv(payload.rows), name, 'text/csv;charset=utf-8')) throw new Error('浏览器拒绝了文件下载')
+            ec.resultName = name
+          } else if (step === '整理监测数据') {
+            payload.json = buildDataJson({
+              ...this.buildExportData(),
+              exportVersion: 'B23',
+              hotspotsNote: '热点为最近一次开启「热点」时的检测结果',
+              liveIndexNote: this.historyMode ? '' : '实时模式序列为平台演示轨迹'
+            })
+          } else if (step === '生成并下载 JSON') {
+            const name = timestampedName('ENSO监测数据包', '.json')
+            if (!downloadText(payload.json, name, 'application/json')) throw new Error('浏览器拒绝了文件下载')
+            ec.resultName = name
+          }
+          ec.steps[index].status = 'done'
+          ec.progress = Math.round((index + 1) / steps.length * 100)
+          await new Promise(resolve => window.setTimeout(resolve, 160))
+        }
+        ec.done = true
+        ec.success = true
+        this.$message({ type: 'success', showClose: true, duration: 4000, message: `导出成功：${ec.resultName}` })
+      } catch (error) {
+        const failIndex = ec.steps.findIndex(item => item.status === 'active')
+        if (failIndex > -1) ec.steps[failIndex].status = 'error'
+        ec.done = true
+        ec.success = false
+        ec.errorText = (error && error.message) || '导出过程中出现未知错误'
+        ec.errorStack = String((error && error.stack) || '').slice(0, 800)
+        if (window.console && console.error) console.error('[导出中心]', error)
+        this.$message({ type: 'error', showClose: true, duration: 6000, message: `导出失败：${ec.errorText}` })
+      } finally {
+        ec.running = false
+      }
+    },
     // ---- 演变时间轴 × AI 助手联动 ----
     // 播放/暂停只控制演变，不再唤起 AI；AI 解读仅通过「AI 解读」按钮触发。
     // 点标签 / 拖滑杆仍保留 AI 联动。
@@ -1445,8 +1708,8 @@ export default {
         xAxis: { type: 'category', boundaryGap: false, data: labels, ...baseAxis },
         yAxis: { type: 'value', min: -1, max: 2, interval: 1, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#839fb4', fontSize: 9, formatter: '{value}°' }, splitLine: { lineStyle: { color: 'rgba(75, 136, 164, .15)', type: 'dashed' } } },
         series: [
-          { name: '观测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 5, connectNulls: false, data: [.2, .3, .5, .6, .7, .8, null, null, null], lineStyle: { width: 2.5, color: '#42d8e5' }, itemStyle: { color: '#72f2eb', borderColor: '#092638', borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(33, 201, 217, .2)' }, { offset: 1, color: 'rgba(33, 201, 217, 0)' }]) } },
-          { name: '预测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 4, connectNulls: false, data: [null, null, null, null, null, .8, .82, .75, .63], lineStyle: { width: 2, type: 'dashed', color: '#ffad64' }, itemStyle: { color: '#ffb36c' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 153, 87, .18)' }, { offset: 1, color: 'rgba(255, 153, 87, 0)' }]) }, markLine: { symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: 'rgba(255, 176, 107, .45)', type: 'dashed', width: 1 }, data: [{ yAxis: .5 }, { yAxis: -.5 }] } }
+          { name: '观测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 5, connectNulls: false, data: LIVE_INDEX.observed, lineStyle: { width: 2.5, color: '#42d8e5' }, itemStyle: { color: '#72f2eb', borderColor: '#092638', borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(33, 201, 217, .2)' }, { offset: 1, color: 'rgba(33, 201, 217, 0)' }]) } },
+          { name: '预测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 4, connectNulls: false, data: LIVE_INDEX.forecast, lineStyle: { width: 2, type: 'dashed', color: '#ffad64' }, itemStyle: { color: '#ffb36c' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 153, 87, .18)' }, { offset: 1, color: 'rgba(255, 153, 87, 0)' }]) }, markLine: { symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: 'rgba(255, 176, 107, .45)', type: 'dashed', width: 1 }, data: [{ yAxis: .5 }, { yAxis: -.5 }] } }
         ]
       }, true)
     },
@@ -1700,4 +1963,35 @@ export default {
 .picker-empty{padding:12px 8px;color:#6f8c9d;font-size:9px;text-align:center}
 .replay-confirm-card:focus{outline:0}
 @media(max-width:620px){.history-collapse-toggle span{display:none}.picker-list{max-height:148px}}
+
+/* ---- B23 · 数据与图表导出中心 ---- */
+.export-center-button{display:flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid rgba(72,195,204,.36);border-radius:4px;color:#9be8e1;background:rgba(18,97,112,.22);font:inherit;font-size:9px;white-space:nowrap;cursor:pointer;transition:all .2s}
+.export-center-button:hover,.export-center-button.active{border-color:rgba(92,228,218,.78);color:#e5fffb;background:rgba(30,135,139,.34);box-shadow:0 0 15px rgba(62,213,204,.16)}
+.export-center-card{--dlg-accent:#46dce5;--dlg-bright:#9df4ee;--dlg-line:rgba(70,220,229,.45);--dlg-fill:rgba(70,220,229,.12);width:560px;max-height:86vh;overflow:auto;padding:15px 17px 14px;border:1px solid var(--dlg-line);border-radius:9px;background:linear-gradient(150deg,rgba(10,38,56,.99),rgba(4,19,32,.99));box-shadow:0 26px 80px rgba(0,0,0,.62),0 0 32px var(--dlg-fill);animation:rcPop .22s cubic-bezier(.2,.8,.2,1) both;outline:0}
+.export-intro{margin:10px 0 0;color:#9db7c4;font-size:9px;line-height:1.6}
+.export-formats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.export-format{padding:9px 11px;border:1px solid rgba(74,140,166,.3);border-radius:6px;background:rgba(6,30,47,.6);font-family:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.export-format:hover{border-color:var(--dlg-line)}
+.export-format.selected{border-color:var(--dlg-accent);background:var(--dlg-fill)}
+.export-format strong{display:flex;align-items:center;gap:6px;color:#e6f6fa;font-size:11px;font-weight:600}
+.export-format strong i{color:var(--dlg-accent)}
+.export-format small{display:block;margin-top:4px;color:#7c99aa;font-size:8px;line-height:1.5}
+.export-options{display:flex;gap:18px;margin-top:11px;color:#9db7c4;font-size:9px}
+.export-options label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.export-options input{accent-color:#46dce5}
+.export-progress{margin-top:12px}
+.export-progress-bar{height:4px;border-radius:4px;background:#123247;overflow:hidden}
+.export-progress-bar i{display:block;height:100%;background:linear-gradient(90deg,#4fd8d0,#ffc477);transition:width .25s}
+.export-progress-bar i.failed{background:#e24b4a}
+.export-progress ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.export-progress li{display:flex;align-items:center;gap:7px;color:#6f8c9d;font-size:9px}
+.export-progress li.active{color:#8fd7e0}
+.export-progress li.done{color:#6fe0a8}
+.export-progress li.error{color:#f09595}
+.export-progress li i{width:12px;text-align:center}
+.export-result{margin:9px 0 0;font-size:10px;line-height:1.5}
+.export-result.ok{color:#6fe0a8}
+.export-result.fail{color:#f09595}
+.export-center-card:focus{outline:0}
+@media(max-width:900px){.export-center-button span{display:none}.export-formats{grid-template-columns:1fr}}
 </style>

@@ -256,7 +256,8 @@ export default {
         { title: '提前期验证', description: '从 PCC、MAE、RMSE 和状态分档等角度评估 1–20 个月预测技巧，支持历史案例对比与 AI 诊断报告。', icon: 'el-icon-s-check', tone: 'green', path: '/enso/validation', action: '查看验证结果' },
         { title: '物理解释', description: '通过时空演变、相关性和显著性图，追踪模型关注的海气信号。', icon: 'el-icon-view', tone: 'blue', path: '/enso/explainability', action: '分析物理信号' },
         { title: '气候 NC', description: '浏览 NetCDF 格点变量与时次，为区域气候影响分析提供数据底座。', icon: 'el-icon-picture-outline', tone: 'purple', path: '/enso/climate-data', action: '打开数据浏览' },
-        { title: '智能研判助手', description: '悬浮 AI 助手提供面板级问询、阈值告警解读与历史事件 / 模型预测报告解读；影响研判 Agent 联动生成中国区域降水、温度与农业风险分析。', icon: 'el-icon-cpu', tone: 'cyan', path: '/enso/monitor', action: '体验 AI 助手' }
+        { title: '智能研判助手', description: '悬浮 AI 助手提供面板级问询、阈值告警解读与历史事件 / 模型预测报告解读；影响研判 Agent 联动生成中国区域降水、温度与农业风险分析。', icon: 'el-icon-cpu', tone: 'cyan', path: '/enso/monitor', action: '体验 AI 助手' },
+        { title: '导出中心', description: '一键导出监测简报（PNG / PDF，地图与图表样式完整保留）与指数时序、监测数据包（CSV / JSON），导出过程带进度与失败提示。', icon: 'el-icon-download', tone: 'gold', path: '/enso/monitor', action: '打开导出中心' }
       ],
       systemWorkflow: [
         { number: '01', title: '汇聚海气输入', description: '接入 NOAA OISST 海温、GFS 风场与历史指数序列，统一时空口径与 1991–2020 距平基准。' },

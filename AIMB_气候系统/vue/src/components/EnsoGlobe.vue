@@ -1306,6 +1306,18 @@ export default {
       };
     },
 
+    // B23 · 3D 快照：同步重绘一帧后立即读取缓冲（无需 preserveDrawingBuffer）
+    snapshot() {
+      const state = this._three;
+      if (!state || !state.renderer) return null;
+      try {
+        state.renderer.render(state.scene, state.camera);
+        return state.renderer.domElement.toDataURL('image/png');
+      } catch (error) {
+        return null;
+      }
+    },
+
     disposeScene() {
       const state = this._three;
       if (!state) return;
