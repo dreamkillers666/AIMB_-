@@ -432,7 +432,7 @@ export function buildBriefingHtml(payload) {
 }
 
 export function buildSeriesCsv(rows) {
-  const table = [['类别', '时间 / 时段', '数值 (℃)', '备注'], ...(rows || [])]
+  const table = [['类别', '时间 / 时段', '数值', '备注'], ...(rows || [])]
   return '\ufeff' + table
     .map(row => row.map(cell => `"${String(cell == null ? '' : cell).replace(/"/g, '""')}"`).join(','))
     .join('\r\n')

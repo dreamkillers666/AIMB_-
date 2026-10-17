@@ -175,7 +175,6 @@
         <section class="map-card panel-card" :class="{ 'map-card-maximized': mapMaximized }">
           <div class="map-heading">
             <div class="map-title"><span class="map-live-icon"><i></i></span><div><span class="panel-kicker">{{ mapPanelKicker }}</span><h2>{{ mapPanelTitle }}</h2></div></div>
-            <span class="map-heading-note">拖动旋转 · 滚轮缩放 · Niño3.4 核心区追踪</span>
           </div>
 
           <enso-map-panel ref="mapPanel" :key="historyMode ? 'history-map' : 'live-map'" :sst-field="historyMode && historyHasData ? historyCurrentField : null" :sst-mode="historyMode && historyHasData ? 'anomaly' : 'absolute'" initial-layer="both" :maximized="mapMaximized" :replay-periods="activePeriods" :replay-index="currentIndexSafe" :replay-playing="isPlaying" :replay-key="replayKey" :compare-field="mapCompareField" @toggle-maximize="toggleMapMaximize" @replay-toggle="togglePlayback" @replay-seek="seekReplay" @replay-step="stepReplay" @replay-speed="setReplaySpeed" />
@@ -539,7 +538,7 @@ export default {
         { key: 'png', label: '监测简报 PNG', desc: '地图快照 + 图表 + 指标合成一页图片', icon: 'el-icon-picture-outline' },
         { key: 'pdf', label: '监测简报 PDF', desc: '排版页面，浏览器打印 / 另存为 PDF', icon: 'el-icon-document' },
         { key: 'csv', label: '指数时序 CSV', desc: '当前数据模式序列，Excel 可直接打开', icon: 'el-icon-tickets' },
-        { key: 'json', label: '监测数据包 JSON', desc: '指标 · 序列 · 钉子 · 剖面 · 热点全量', icon: 'el-icon-files' }
+        { key: 'json', label: '监测数据包 JSON', desc: '全部面板数据结构化导出（含热含量 / 信号 / 影响 / 概率）', icon: 'el-icon-files' }
       ]
     },
     modeBanner() {
@@ -1383,27 +1382,70 @@ export default {
           colorScale: this.historyHasData ? 'SSTA 固定色标 −3 ~ +3 ℃' : 'SST 绝对色标 −2 ~ 32 ℃',
           baseline: '距平基准期 1991–2020'
         },
+        panels: {
+          phase: {
+            title: this.displayPhaseTitle,
+            caption: this.displayPhaseCaption,
+            threshold: `${this.displayThreshold}%`,
+            observation: { ...this.displayObservation }
+          },
+          heat: this.displayHeatContent.map(item => ({ ...item })),
+          signals: this.displaySignals.map(item => ({ ...item })),
+          impacts: { status: this.impactStatus, levels: this.displayRiskLevels.map(item => ({ ...item })) },
+          probability: { ...this.probabilityOutlook },
+          mapStats: this.displayMapStats.map(item => ({ ...item }))
+        },
         seriesRows: this.buildSeriesRows()
       }
     },
     buildSeriesRows() {
+      const rows = []
       if (!this.historyMode) {
-        const rows = []
         LIVE_INDEX.labels.forEach((label, index) => {
           const observed = LIVE_INDEX.observed[index]
           const forecast = LIVE_INDEX.forecast[index]
           if (observed !== null) rows.push(['实时预测 · 观测', label, observed.toFixed(2), 'Niño3.4'])
           if (forecast !== null) rows.push(['实时预测 · 预测', label, forecast.toFixed(2), 'LSTA-Swin 演示轨迹'])
         })
-        return rows
+      } else {
+        const tag = `${this.historyType === 'model' ? '模型历史预测' : '历史事件'} · ${this.historyActiveItem.label}`
+        this.historySeries.forEach(point => {
+          rows.push([
+            tag,
+            point.month,
+            point.value === null || point.value === undefined ? '' : Number(point.value).toFixed(2),
+            point.observed === null || point.observed === undefined ? '' : `观测 ${Number(point.observed).toFixed(2)}`
+          ])
+        })
       }
-      const tag = `${this.historyType === 'model' ? '模型历史预测' : '历史事件'} · ${this.historyActiveItem.label}`
-      return this.historySeries.map(point => [
-        tag,
-        point.month,
-        point.value === null || point.value === undefined ? '' : Number(point.value).toFixed(2),
-        point.observed === null || point.observed === undefined ? '' : `观测 ${Number(point.observed).toFixed(2)}`
-      ])
+      // 海气实时监测面板
+      const observation = this.displayObservation
+      rows.push(['海气实时监测', '东太平洋 SST', observation.east, ''])
+      rows.push(['海气实时监测', '信风距平', observation.wind, observation.wind !== '—' ? 'm/s' : ''])
+      rows.push(['海气实时监测', '暖水体积', observation.volume, observation.volume !== '—' ? '%' : ''])
+      rows.push(['海气实时监测', '阈值进度', `${this.displayThreshold}%`, this.displayPhaseTitle])
+      // 海洋热含量变化面板
+      this.displayHeatContent.forEach(item => {
+        rows.push(['海洋热含量变化', item.name, item.label, `${item.value}%`])
+      })
+      // 关键气候信号面板
+      this.displaySignals.forEach(signal => {
+        rows.push(['关键气候信号', signal.time, '—', `${signal.title}：${signal.detail}`])
+      })
+      // 区域影响信号面板
+      this.displayRiskLevels.forEach(risk => {
+        rows.push(['区域影响信号', risk.name, `${risk.value}%`, risk.label])
+      })
+      // 未来 ENSO 状态概率面板
+      const outlook = this.probabilityOutlook
+      outlook.labels.forEach((label, index) => {
+        rows.push(['未来 ENSO 状态概率', label, `${outlook.elNino[index]}%`, `中性 ${outlook.neutral[index]}% / 拉尼娜 ${outlook.laNina[index]}%`])
+      })
+      // 地图统计条
+      this.displayMapStats.forEach(stat => {
+        rows.push(['地图统计', stat.title, String(stat.value), String(stat.metric)])
+      })
+      return rows
     },
     buildExportSteps(format) {
       if (format === 'png') return ['采集图表快照', '渲染地图快照', '合成简报排版', '生成并下载文件']
