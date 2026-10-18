@@ -677,7 +677,11 @@ export default {
     },
     describeError(error) {
       if (error instanceof AiRequestError) {
-        return error.status ? `${error.message}（HTTP ${error.status}）` : error.message
+        // 文案里已带 HTTP 状态（如「请求失败（HTTP 500）」）时不再重复拼接
+        if (error.status && !/HTTP\s*\d{3}/.test(error.message)) {
+          return `${error.message}（HTTP ${error.status}）`
+        }
+        return error.message
       }
       if (error && error.message) return error.message
       return '未知错误'

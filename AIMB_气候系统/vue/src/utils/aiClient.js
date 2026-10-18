@@ -57,6 +57,10 @@ const describeNetworkError = (error, base) => {
 
 /** 从服务端错误体里提取可读信息 */
 const describeFailure = (status, body) => {
+  // 网关/CDN 的 5xx 错误体往往是 "error code: 502" 这类纯文本，优先给出可读解释
+  if (status === 502 || status === 503 || status === 504) {
+    return 'AI 网关暂时不可用（上游服务波动，通常几分钟内恢复），请稍后重试'
+  }
   if (body && typeof body === 'object') {
     const error = body.error
     if (error && typeof error.message === 'string' && error.message) return error.message
