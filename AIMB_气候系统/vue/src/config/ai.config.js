@@ -26,23 +26,30 @@ const DEFAULT_DIRECT_BASE = `${DEFAULT_GATEWAY_ORIGIN}/v1`
 const DEFAULT_API_KEY = 'sk-9214623399b1dc4ad9bbaaf870794bdeb4339a8d248ca144c3c976ec682dee2a'
 
 // 读取构建期环境变量（未配置时回落到配置常量）
-const env = (typeof process !== 'undefined' && process.env) ? process.env : {}
+// 注意：webpack 只静态替换完整的 process.env.VUE_APP_XXX 表达式，
+// 写成 const env = process.env 再 env.VUE_APP_XXX 在浏览器里恒为 undefined。
+/* eslint-disable no-undef */
+const ENV_API_KEY = process.env.VUE_APP_AI_API_KEY
+const ENV_BASE_URL = process.env.VUE_APP_AI_BASE_URL
+const ENV_DIRECT_BASE_URL = process.env.VUE_APP_AI_DIRECT_BASE_URL
+const ENV_MODEL = process.env.VUE_APP_AI_MODEL
+/* eslint-enable no-undef */
 
 const trimSlash = value => String(value || '').replace(/\/+$/, '')
 
-const baseUrl = trimSlash(env.VUE_APP_AI_BASE_URL || DEFAULT_PROXY_BASE)
-const directBaseUrl = trimSlash(env.VUE_APP_AI_DIRECT_BASE_URL || DEFAULT_DIRECT_BASE)
+const baseUrl = trimSlash(ENV_BASE_URL || DEFAULT_PROXY_BASE)
+const directBaseUrl = trimSlash(ENV_DIRECT_BASE_URL || DEFAULT_DIRECT_BASE)
 
 export const aiConfig = {
   // ---- 基础接入信息 ----
   modelProvider: 'OpenAI',
-  model: env.VUE_APP_AI_MODEL || DEFAULT_MODEL,
+  model: ENV_MODEL || DEFAULT_MODEL,
   reviewModel: DEFAULT_MODEL,
   baseUrl,
   modelsUrl: `${baseUrl}/models`,
   // 主地址不可用时的备用地址（同源代理 -> 直连）
   fallbackBaseUrls: directBaseUrl && directBaseUrl !== baseUrl ? [directBaseUrl] : [],
-  apiKey: env.VUE_APP_AI_API_KEY || DEFAULT_API_KEY,
+  apiKey: ENV_API_KEY || DEFAULT_API_KEY,
   wireApi: 'responses', // responses | chat.completions
   requiresOpenaiAuth: true,
   disableResponseStorage: true,

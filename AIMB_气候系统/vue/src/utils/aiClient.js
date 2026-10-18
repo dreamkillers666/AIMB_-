@@ -85,6 +85,7 @@ const fetchWithTimeout = async (url, init, timeoutMs) => {
 /**
  * 创建可「续命」的中止控制器：
  * 流式期间每收到一段内容就调用 touch()，只有真正长时间无响应才会中止。
+ * 空闲计时（idleMs，每次 touch 重置）与整体上限（hardMs，一次性）分开，避免长回答被误杀。
  */
 const createAbortScope = (idleMs, hardMs, externalSignal) => {
   if (typeof AbortController !== 'function') {
@@ -92,16 +93,15 @@ const createAbortScope = (idleMs, hardMs, externalSignal) => {
   }
   const controller = new AbortController()
   let idledOut = false
-  const started = Date.now()
   let idleTimer = null
   const arm = () => {
     if (idleTimer) clearTimeout(idleTimer)
-    const remaining = Math.max(hardMs - (Date.now() - started), 1000)
     idleTimer = setTimeout(() => {
       idledOut = true
       controller.abort()
-    }, Math.min(idleMs, remaining))
+    }, idleMs)
   }
+  const hardTimer = setTimeout(() => controller.abort(), hardMs)
   arm()
   const forwardAbort = () => controller.abort()
   if (externalSignal) {
@@ -114,6 +114,7 @@ const createAbortScope = (idleMs, hardMs, externalSignal) => {
     idleTimedOut: () => idledOut,
     cleanup: () => {
       if (idleTimer) clearTimeout(idleTimer)
+      clearTimeout(hardTimer)
       if (externalSignal) externalSignal.removeEventListener('abort', forwardAbort)
     }
   }
@@ -279,6 +280,10 @@ const requestStream = async (base, payload, onDelta, externalSignal) => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
+    // 收到终止事件（response.completed / incomplete / [DONE]）就主动收尾：
+    // 网关常常发完内容却不关连接，只等 reader.read() 返回 done 会一直挂住
+    let finished = false
+    let sawTerminal = false
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -293,30 +298,50 @@ const requestStream = async (base, payload, onDelta, externalSignal) => {
           const line = rawLine.trim()
           if (!line || line.indexOf('data:') !== 0) continue
           const dataText = line.slice(5).trim()
-          if (!dataText || dataText === '[DONE]') continue
+          if (!dataText) continue
+          if (dataText === '[DONE]') {
+            finished = true
+            break
+          }
           const event = safeParse(dataText)
           if (!event) continue
           if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
             full += event.delta
             if (onDelta) onDelta(event.delta, full)
-          } else if (event.type === 'response.completed' && !full) {
-            const text = extractOutputText(event.response)
-            if (text) {
-              full = text
-              if (onDelta) onDelta(text, full)
+          } else if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+            if (!full) {
+              const text = extractOutputText(event.response)
+              if (text) {
+                full = text
+                if (onDelta) onDelta(text, full)
+              }
             }
+            sawTerminal = true
+            finished = true
+            break
           } else if (event.type === 'response.failed' || event.type === 'error') {
             const detail = event.response ? describeFailure(0, event.response) : (event.message || '模型返回失败')
             throw new AiRequestError(detail, 0, dataText)
           }
         }
+        if (finished) break
       }
+      if (finished) break
+    }
+    if (finished) {
+      // 主动断开，释放连接（网关未发送 EOF 时尤其重要）
+      try { await reader.cancel() } catch (error) { /* 已被取消 */ }
     }
     if (!full.trim()) {
-      throw new AiRequestError('模型没有返回文本内容，请重试或更换模型', 0, '')
+      throw new AiRequestError('模型没有返回文本内容，请重试或更换模型', 0, sawTerminal ? 'empty-terminal' : '')
     }
     return full
   } catch (error) {
+    // 空闲超时但已经收到完整正文：视为正常结束，不再报错
+    // （网关常见行为：内容推完就停，不发结束标记也不关连接）
+    if (error && error.name === 'AbortError' && scope.idleTimedOut() && full.trim()) {
+      return full
+    }
     throw normalizeAbort(error, externalSignal, aiConfig.idleTimeoutMs, scope.idleTimedOut)
   } finally {
     scope.cleanup()

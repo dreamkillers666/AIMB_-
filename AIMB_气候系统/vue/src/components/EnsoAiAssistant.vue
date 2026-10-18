@@ -650,7 +650,11 @@ export default {
           reply.error = true
           reply.content = reply.content || '抱歉，本次请求未能完成。'
           reply.errorText = this.describeError(error)
-          this.connState = { label: '接口不可用', tone: 'error' }
+          // 区分「超时」与「接口不可用」：超时通常是网关长时间无响应，不代表接口坏了
+          const timedOut = error instanceof AiRequestError && error.detail === 'timeout'
+          this.connState = timedOut
+            ? { label: '请求超时', tone: 'error' }
+            : { label: '接口不可用', tone: 'error' }
         }
       } finally {
         this.clearThinkTimer()
