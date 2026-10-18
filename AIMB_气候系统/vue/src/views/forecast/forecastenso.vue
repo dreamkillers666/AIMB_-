@@ -1149,7 +1149,7 @@ export default {
       const controller = typeof AbortController === 'function' ? new AbortController() : null
       const timeout = controller ? setTimeout(() => controller.abort(), 5000) : null
       const options = controller ? { signal: controller.signal } : undefined
-      fetch('http://localhost:8000/wind', options)
+      fetch('/pyeng/wind', options)
         .then(response => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`)
           return response.json()

@@ -320,7 +320,7 @@ export default {
       uploadHeaders: {},
       uploadStatus: 'idle', // 'idle', 'uploading', 'success', 'error'
       debugMode: true,
-      gridDataApiBase: (process.env.VUE_APP_GRID_DATA_API_BASE_URL || 'http://localhost:9090').replace(/\/+$/, '')
+      gridDataApiBase: (process.env.VUE_APP_GRID_DATA_API_BASE_URL || '/api').replace(/\/+$/, '')
     }
   },
   computed: {

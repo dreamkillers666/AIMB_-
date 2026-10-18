@@ -26,7 +26,7 @@
           <el-button type="danger" slot="reference">批量删除 <i class="el-icon-remove-outline"></i></el-button>
         </el-popconfirm>
         <el-upload
-            action="http://localhost:9090/feedback/import"
+            action="/api/feedback/import"
             :show-file-list="false"
             accept="xlsx"
             :on-success="handleExcelImportSuccess"
@@ -172,7 +172,7 @@ export default {
       const formData = new FormData();
       formData.append('file', $file);
       axios({
-        url: 'http://localhost:9090/file/upload',
+        url: '/api/file/upload',
         method: 'post',
         data: formData,
         headers: {'Content-Type': 'multipart/form-data'},
@@ -266,7 +266,7 @@ export default {
       this.load()
     },
     exp() {
-      window.open("http://localhost:9090/feedback/export")
+      window.open("/api/feedback/export")
     },
     auditSuccess(id) {
       this.request.post("/feedback/auditSuccess/" + id).then(res => {

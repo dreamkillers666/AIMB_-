@@ -112,7 +112,7 @@ export default {
         console.log("您的浏览器不支持WebSocket");
       } else {
         console.log("您的浏览器支持WebSocket");
-        let socketUrl = "ws://localhost:9090/imserver/" + username;
+        let socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + "/api/imserver/" + username;
         if (socket != null) {
           socket.close();
           socket = null;

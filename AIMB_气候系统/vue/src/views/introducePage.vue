@@ -1209,7 +1209,7 @@ export default {
     fetchRealWind() {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
-      return fetch("http://localhost:8000/wind", { signal: controller.signal })
+      return fetch("/pyeng/wind", { signal: controller.signal })
         .then((res) => {
           clearTimeout(timer);
           if (!res.ok) throw new Error("HTTP " + res.status);

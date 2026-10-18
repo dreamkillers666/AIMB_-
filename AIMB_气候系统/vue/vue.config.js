@@ -6,6 +6,8 @@ const AI_GATEWAY_ORIGIN = process.env.VUE_APP_AI_ORIGIN || 'https://api.gs88.sho
 
 module.exports = defineConfig({
   transpileDependencies: true,
+  // 生产构建不输出 sourcemap：dist 体积减半，且不暴露源码
+  productionSourceMap: false,
   devServer: {
     historyApiFallback: true,
     // 关键：必须关闭 dev-server 的响应压缩。

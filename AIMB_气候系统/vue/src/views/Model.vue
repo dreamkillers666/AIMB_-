@@ -21,7 +21,7 @@
           <el-button type="danger" slot="reference">批量删除 <i class="el-icon-remove-outline"></i></el-button>
         </el-popconfirm>
         <el-upload
-            action="http://localhost:9090/model/import"
+            action="/api/model/import"
             :show-file-list="false"
             accept="xlsx"
             :on-success="handleExcelImportSuccess"
@@ -229,7 +229,7 @@ export default {
       this.load()
     },
     exp() {
-      window.open("http://localhost:9090/model/export")
+      window.open("/api/model/export")
     },
     handleExcelImportSuccess() {
       this.$message.success("导入成功")

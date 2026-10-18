@@ -149,7 +149,7 @@
 <!--      selectedVariable: '',   // The variable chosen by the user-->
 <!--      tempFileId: '',         // The temporary filename on the server-->
 <!--      predictionImageSrc: '',    // The final plot image URL-->
-<!--      uploadAction: 'http://localhost:9090/griddata/get-variables',-->
+<!--      uploadAction: '/api/griddata/get-variables',-->
 <!--      uploadHeaders: {}-->
 <!--    }-->
 <!--  },-->
@@ -255,7 +255,7 @@
 <!--        console.log("后端返回绘图结果:", res);-->
 <!--        if (res && res.imageUrl) {-->
 <!--          // Construct the full URL and display the image-->
-<!--          this.predictionImageSrc = 'http://localhost:9090' + res.imageUrl;-->
+<!--          this.predictionImageSrc = '/api' + res.imageUrl;-->
 <!--          this.uiState = 'plot-success';-->
 <!--        } else {-->
 <!--          this.$message.error("绘图失败: " + (res.message || "未能获取图片URL"));-->
@@ -582,8 +582,8 @@ export default {
       imageInfo: null,
 
       // 上传配置
-      uploadActionForTable: 'http://localhost:9090/griddata/upload',
-      uploadActionForViz: 'http://localhost:9090/griddata/get-variables',
+      uploadActionForTable: '/api/griddata/upload',
+      uploadActionForViz: '/api/griddata/get-variables',
       uploadHeaders: {},
       uploadStatus: 'idle', // 'idle', 'uploading', 'success', 'error'
       debugMode: true
@@ -812,7 +812,7 @@ export default {
         });
 
         if (res && res.imageUrl) {
-          this.predictionImageSrc = 'http://localhost:9090' + res.imageUrl;
+          this.predictionImageSrc = '/api' + res.imageUrl;
           this.uiState = 'plot-success';
 
           // 设置图像信息

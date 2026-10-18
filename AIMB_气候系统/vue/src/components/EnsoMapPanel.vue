@@ -1036,7 +1036,7 @@ export default {
       const controller = new AbortController()
       this.fetchController = controller
       const timeout = window.setTimeout(() => controller.abort(), 5000)
-      return fetch('http://localhost:8000/wind', { signal: controller.signal })
+      return fetch('/pyeng/wind', { signal: controller.signal })
         .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json() })
         .then(raw => {
           const wind = this.adaptWindData(raw)

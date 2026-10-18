@@ -191,7 +191,7 @@ export default {
       this.load()
     },
     exp() {
-      window.open("http://localhost:9090/model/export")
+      window.open("/api/model/export")
     },
     handleExcelImportSuccess() {
       this.$message.success("导入成功")
