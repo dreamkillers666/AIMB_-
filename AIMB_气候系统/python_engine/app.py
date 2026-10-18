@@ -29,6 +29,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import math
+
+def _json_safe(o):
+    """递归把 NaN/Inf 转为 None，否则 starlette JSON 序列化直接 500（陆地掩膜区为 NaN）。"""
+    if isinstance(o, dict):
+        return {k: _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    if isinstance(o, (float, np.floating)) and (math.isnan(o) or math.isinf(o)):
+        return None
+    return o
+
 @app.get("/wind")
 def get_wind():
     """返回 leaflet-velocity 格式的全球 GFS 10m 风场 JSON。
@@ -39,7 +51,7 @@ def get_wind():
     if result is None:
         detail = wind_service.last_error or "GFS wind data unavailable"
         raise HTTPException(status_code=503, detail=detail)
-    return result
+    return _json_safe(result)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
