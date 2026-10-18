@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import javax.servlet.http.HttpServletResponse;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
@@ -31,6 +31,10 @@ import java.util.regex.Pattern;
  *
  * <p>开发环境同一条路径由 vue.config.js 的 devServer.proxy 承担，生产环境由本控制器承担，
  * 两边路径完全一致，前端不需要区分环境。</p>
+ *
+ * <p>注意：流式分支直接写 {@link HttpServletResponse}。不要把 StreamingResponseBody 包进
+ * ResponseEntity 返回——Spring MVC 只对裸返回类型启用流式处理器，包一层后会被当作普通
+ * 响应体去找消息转换器，抛 HttpMessageNotWritableException（No converter ... text/event-stream）。</p>
  */
 @RestController
 @RequestMapping("/ai-gateway/v1")
@@ -65,16 +69,40 @@ public class AiGatewayController {
      * 对话接口。请求体带 {@code "stream": true} 时以 SSE 逐段回传，否则一次性回传。
      */
     @PostMapping("/responses")
-    public ResponseEntity<?> responses(@RequestBody(required = false) byte[] body) {
+    public void responses(@RequestBody(required = false) byte[] body, HttpServletResponse httpResponse) throws Exception {
         if (isStreamRequest(body)) {
-            StreamingResponseBody stream = outputStream -> relayStream("/responses", body, outputStream);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.TEXT_EVENT_STREAM);
-            headers.set("Cache-Control", "no-cache, no-transform");
-            headers.set("X-Accel-Buffering", "no");
-            return new ResponseEntity<>(stream, headers, HttpStatus.OK);
+            httpResponse.setStatus(HttpServletResponse.SC_OK);
+            httpResponse.setContentType("text/event-stream;charset=UTF-8");
+            httpResponse.setHeader("Cache-Control", "no-cache, no-transform");
+            httpResponse.setHeader("X-Accel-Buffering", "no");
+            try {
+                relayStream("/responses", body, httpResponse.getOutputStream());
+            } catch (HttpStatusCodeException e) {
+                // 上游在出流前报错（401/429/5xx 等）：尚未提交响应则原样透传状态与错误体
+                if (!httpResponse.isCommitted()) {
+                    httpResponse.reset();
+                    httpResponse.setStatus(e.getRawStatusCode());
+                    httpResponse.setContentType("application/json;charset=UTF-8");
+                    byte[] payload = e.getResponseBodyAsByteArray();
+                    httpResponse.getOutputStream().write(payload.length > 0 ? payload
+                            : "{\"error\":{\"message\":\"AI 网关上游返回错误\"}}".getBytes(StandardCharsets.UTF_8));
+                    httpResponse.getOutputStream().flush();
+                } else {
+                    writeSseError(httpResponse, e.getMessage());
+                }
+            } catch (Exception e) {
+                writeSseError(httpResponse, e.getMessage());
+            }
+            return;
         }
-        return relayOnce(HttpMethod.POST, "/responses", body);
+        ResponseEntity<byte[]> result = relayOnce(HttpMethod.POST, "/responses", body);
+        httpResponse.setStatus(result.getStatusCodeValue());
+        MediaType contentType = result.getHeaders().getContentType();
+        httpResponse.setContentType(contentType != null ? contentType.toString() : "application/json;charset=UTF-8");
+        if (result.getBody() != null && result.getBody().length > 0) {
+            httpResponse.getOutputStream().write(result.getBody());
+        }
+        httpResponse.getOutputStream().flush();
     }
 
     private boolean isStreamRequest(byte[] body) {
@@ -82,6 +110,17 @@ public class AiGatewayController {
             return false;
         }
         return STREAM_FLAG.matcher(new String(body, StandardCharsets.UTF_8)).find();
+    }
+
+    private void writeSseError(HttpServletResponse response, String message) throws Exception {
+        if (response.isCommitted()) {
+            return;
+        }
+        String safe = message == null ? "AI 网关转发失败" : message.replace("\"", "'");
+        response.setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":{\"message\":\"" + safe + "\"}}");
+        response.getWriter().flush();
     }
 
     private HttpHeaders upstreamHeaders() {
