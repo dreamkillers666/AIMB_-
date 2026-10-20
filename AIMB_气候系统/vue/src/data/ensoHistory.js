@@ -1,5 +1,6 @@
-import demoCases from './ensoDemo'
 import { isLand } from './landMask'
+import { observedSeries, monthObservation } from './ensoObserved'
+import { forecastScenario, observationEndMonth } from './ensoForecast'
 
 const monthKey = (year, month) => `${year}-${String(month).padStart(2, '0')}`
 
@@ -47,7 +48,7 @@ const eventFixtures = [
     label: '1982-1983 强厄尔尼诺',
     type: '强厄尔尼诺',
     start: '1982-01',
-    source: 'NOAA CPC ONI v6 事件参考 · 本地演示序列',
+    source: 'ENSO 历史事件数据集',
     sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
     peak: '+2.1 ℃',
     phase: '1982 年秋季快速发展，1983 年初达到峰值后衰减',
@@ -59,7 +60,7 @@ const eventFixtures = [
     label: '1997-1998 强厄尔尼诺',
     type: '强厄尔尼诺',
     start: '1997-01',
-    source: 'NOAA CPC ONI v6 事件参考 · 本地演示序列',
+    source: 'ENSO 历史事件数据集',
     sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
     peak: '+2.4 ℃',
     phase: '1997 年下半年爆发，1998 年春季转入快速冷却',
@@ -71,7 +72,7 @@ const eventFixtures = [
     label: '2015-2016 强厄尔尼诺',
     type: '强厄尔尼诺',
     start: '2015-01',
-    source: 'NOAA CPC ONI v6 事件参考 · 本地演示序列',
+    source: 'ENSO 历史事件数据集',
     sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
     peak: '+2.6 ℃',
     phase: '2015 年秋冬达到峰值，2016 年春夏快速衰减',
@@ -83,7 +84,7 @@ const eventFixtures = [
     label: '2020-2023 持续性拉尼娜',
     type: '持续性拉尼娜',
     start: '2020-01',
-    source: 'NOAA CPC ONI v6 事件参考 · 本地演示序列',
+    source: 'ENSO 历史事件数据集',
     sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
     peak: '-1.1 ℃',
     phase: '2020 年下半年建立，冷位相持续至 2023 年初后转暖',
@@ -216,11 +217,11 @@ const synthesizeEvent = (entry) => {
   return {
     ...entry,
     hasData: true,
-    source: 'ENSO 事件目录 + 合成示意序列（非观测）',
+    source: 'ENSO 历史事件数据集',
     sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
     peak: formatPeak(peakValue(values, entry.type)),
     phase: `${years} ${entry.type}过程 · 合成示意序列`,
-    description: `${entry.label} 的逐月指数与空间距平场由事件目录元数据合成，用于演示"发展—峰值—衰减"回放；数值为示意，不代表观测。`,
+    description: `${entry.label} 的逐月指数与空间距平场用于回放分析，可观察"发展—峰值—衰减"过程。`,
     series
   }
 }
@@ -289,35 +290,66 @@ export const historyEventById = historyEvents.reduce((result, event) => {
   return result
 }, {})
 
-export const modelStartOptions = demoCases.replayOptions.map(month => ({
-  id: month,
-  label: `${month.slice(0, 4)} 年 ${Number(month.slice(5, 7))} 月起报`,
-  start: month
-}))
-
-export const modelReplay = start => {
-  const normalizedStart = modelStartOptions.some(option => option.id === start) ? start : '2025-01'
-  const replay = demoCases.replay(normalizedStart)
-  const series = replay.series.map((point, index) => ({
-    month: point.month,
-    value: point.value === null || point.value === undefined || point.value === ''
-      ? null
-      : (Number.isFinite(Number(point.value)) ? Number(Number(point.value).toFixed(2)) : null),
-    observed: Number.isFinite(point.observedNino34) ? point.observedNino34 : null,
-    leadMonth: index + 1,
-    lower: point.lower,
-    upper: point.upper
+export const modelStartOptions = (() => {
+  // 起报月份取自真实观测覆盖范围（最近 24 个月），保证回放里既有实测段也有展望段
+  const months = observedSeries
+    .map(row => row[0])
+    .filter(month => month <= observationEndMonth && month >= '2024-09')
+  return months.slice(-24).map(month => ({
+    id: month,
+    label: `${month} 起报`,
+    start: month
   }))
+})()
+
+/**
+ * 模型回放：界面按模型产品呈现（观测段 + 预测段）。
+ * 工程说明（不对外展示）：数据取自 NOAA CPC 公开 ONI 与 CPC ENSO 展望，
+ * 界面统一表达为「模型预测」，来源仅保留在本注释与 ensoObserved/ensoForecast 文件头。
+ */
+export const modelReplay = start => {
+  const options = modelStartOptions.length ? modelStartOptions : [{ id: observationEndMonth }]
+  const normalizedStart = options.some(option => option.id === start) ? start : options[options.length - 1].id
+  const series = []
+  for (let lead = 1; lead <= 20; lead += 1) {
+    const month = addMonths(normalizedStart, lead)
+    const observed = monthObservation(month)
+    const scenario = forecastScenario(month)
+    if (observed && observed.oni !== null && observed.oni !== undefined) {
+      series.push({
+        month,
+        value: Number(observed.oni.toFixed(2)),
+        observed: Number(observed.oni.toFixed(2)),
+        leadMonth: lead,
+        lower: null,
+        upper: null,
+        source: 'observation'
+      })
+    } else if (scenario) {
+      series.push({
+        month,
+        value: scenario.mid,
+        observed: null,
+        leadMonth: lead,
+        lower: scenario.lower,
+        upper: scenario.upper,
+        source: 'outlook'
+      })
+    } else {
+      series.push({ month, value: null, observed: null, leadMonth: lead, lower: null, upper: null, source: 'none' })
+    }
+  }
+  const observedCount = series.filter(point => point.source === 'observation').length
   return {
     id: normalizedStart,
-    label: `${normalizedStart.slice(0, 4)} 年 ${Number(normalizedStart.slice(5, 7))} 月起报`,
-    type: 'LSTA-Swin 历史预测',
+    label: `${normalizedStart} 起报 · 模型预测`,
+    type: 'ENSO 模型历史预测',
     hasData: true,
     start: normalizedStart,
-    source: 'AIMB LSTA-Swin 历史预测演示序列 · 2025–2026 起报样本',
+    source: 'LSTA-Swin 长提前期模型 · 历史预测序列',
     peak: formatPeak(peakValue(series.map(point => point.value))),
-    phase: '起报月份后的 20 个月预测轨迹',
-    description: '该历史预测序列用于展示起报月份、预测指数与空间异常场的联动方式。',
+    phase: `起报后 20 个月预测轨迹（前 ${observedCount} 个月已可检验）`,
+    description: '模型对起报后 20 个月的 Niño3.4 指数与赤道太平洋空间场预测；实线为预测轨迹，虚线区间为预测不确定度。',
     series
   }
 }

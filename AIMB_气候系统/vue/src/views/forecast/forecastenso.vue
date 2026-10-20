@@ -66,7 +66,7 @@
           <el-select v-if="historyMode && historyType === 'event'" v-model="selectedHistoryEventId" class="history-select" filterable aria-label="选择 ENSO 历史事件" placeholder="选择历史事件" @change="syncHistoryQuery">
             <el-option v-for="event in historyEvents" :key="event.id" :label="event.label" :value="event.id"><span class="history-option"><i :class="event.type.indexOf('拉尼娜') > -1 ? 'cool' : 'warm'"></i>{{ event.label }}</span></el-option>
           </el-select>
-          <el-select v-else-if="historyMode" v-model="selectedHistoryModelStart" class="history-select" filterable aria-label="选择 LSTA-Swin 模型历史预测起报月份" placeholder="选择起报月份" @change="syncHistoryQuery">
+          <el-select v-else-if="historyMode" v-model="selectedHistoryModelStart" class="history-select" filterable aria-label="选择模型起报月份" placeholder="选择起报月份" @change="syncHistoryQuery">
             <el-option v-for="option in modelStartOptions" :key="option.id" :label="option.label" :value="option.id" />
           </el-select>
           <span v-else class="history-live-hint">当前展示实时观测数据 · 点击「ENSO 历史事件」或「模型历史预测」即可进入历史回放</span>
@@ -202,7 +202,7 @@
             <button class="panel-ai" type="button" title="让 AI 解读该面板" @click="askAi('index')"><i class="el-icon-cpu"></i></button>
           </div>
           <div ref="indexChart" class="index-chart"></div>
-          <div class="forecast-legend"><span><i class="observed-line"></i>{{ historyMode ? (historyType === 'event' ? '事件指数' : 'LSTA-Swin 预测') : '观测' }}</span><span><i class="forecast-line"></i>{{ historyMode && historyType === 'model' ? '观测代理' : '预测' }}</span><span><i class="threshold-line"></i>±0.5 阈值</span></div>
+          <div class="forecast-legend"><span><i class="observed-line"></i>{{ historyMode ? (historyType === 'event' ? '事件指数' : '模型预测') : '观测' }}</span><span><i class="forecast-line"></i>{{ historyMode && historyType === 'model' ? '实况对照' : '预测' }}</span><span><i class="threshold-line"></i>±0.5 阈值</span></div>
         </section>
         <section class="panel-card impact-card">
           <div class="panel-heading">
@@ -352,24 +352,61 @@ import * as echarts from 'echarts'
 import EnsoMapPanel from '@/components/EnsoMapPanel.vue'
 import AnimatedNumber from '@/components/AnimatedNumber.vue'
 import { historyEvents, modelStartOptions, modelReplay, fieldForPoint } from '@/data/ensoHistory'
+import { latestWeekly, latestMonthly, nearestSoi, monthObservation, officialOutlook } from '@/data/ensoObserved'
+import { forecastScenario } from '@/data/ensoForecast'
 import { openAiBriefing, openAiChat } from '@/utils/aiBus'
 import { getModelReports } from '@/data/ensoReports'
 import { composeBriefingCanvas, buildBriefingHtml, buildSeriesCsv, buildDataJson, downloadText, downloadDataUrl, timestampedName, renderProfileChart } from '@/utils/ensoExport'
 
 const BOOT_LINES = [
   { text: 'LINK · NOAA OISST v2.1 观测网', state: 'OK' },
-  { text: 'LINK · ERSST v5 再分析资料', state: 'OK' },
+  { text: 'LINK · ONI / SOI 指数监测', state: 'OK' },
   { text: 'LINK · GFS 风场分析场', state: 'OK' },
-  { text: 'INIT · LSTA-Swin 长提前期模型', state: 'READY' },
+  { text: 'CAL · 预测模型基线校准', state: '1991–2020' },
   { text: 'CAL · Niño3.4 / ONI 指数基线', state: '1991–2020' },
   { text: 'SYNC · ENSO 影响研判 Agent', state: 'ONLINE' }
 ]
 
-// 实时模式演示序列：指数图与导出中心共用同一份，保持口径一致
-const LIVE_INDEX = {
-  labels: ['MAM', 'AMJ', 'MJJ', 'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ'],
-  observed: [.2, .3, .5, .6, .7, .8, null, null, null],
-  forecast: [null, null, null, null, null, .8, .82, .75, .63]
+const signedText = (value, decimals = 2) => {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  const numeric = Number(value)
+  return `${numeric > 0 ? '+' : numeric < 0 ? '−' : ''}${Math.abs(numeric).toFixed(decimals)}`
+}
+
+// 实时指数序列：5 个实测季节（CPC ONI，2026 MAM–JAS）+ 4 个官方展望季节（ASO–NDJ）
+const LIVE_INDEX = (() => {
+  const labels = ['MAM', 'AMJ', 'MJJ', 'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ']
+  const months = ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12']
+  const observed = []
+  const forecast = []
+  months.forEach((month) => {
+    const obs = monthObservation(month)
+    if (obs && obs.oni !== null && obs.oni !== undefined) {
+      observed.push(Number(obs.oni.toFixed(2)))
+      forecast.push(null)
+      return
+    }
+    const scenario = forecastScenario(month)
+    observed.push(null)
+    forecast.push(scenario ? scenario.mid : null)
+  })
+  return { labels, observed, forecast }
+})()
+
+// 当前阶段判定：以周 Niño3.4 距平为主（官方强度分级 ≥2.5 为超强），并用 ONI 做交叉校验
+const classifyEnso = (weekly, oni) => {
+  const weeklyValue = Number(weekly)
+  const oniValue = Number(oni)
+  const reference = Number.isFinite(weeklyValue) ? weeklyValue : (Number.isFinite(oniValue) ? oniValue : 0)
+  if (reference >= 2.5) return '超强厄尔尼诺'
+  if (reference >= 2.0) return '强厄尔尼诺'
+  if (reference >= 1.5) return '中等偏强厄尔尼诺'
+  if (reference >= 1.0) return '中等厄尔尼诺'
+  if (reference >= 0.5) return '弱厄尔尼诺'
+  if (reference <= -2.0) return '强拉尼娜'
+  if (reference <= -1.5) return '中等偏强拉尼娜'
+  if (reference <= -0.5) return '拉尼娜'
+  return '中性'
 }
 
 export default {
@@ -414,7 +451,13 @@ export default {
       pulseKey: '',
       pulseTimer: null,
       periods: ['2026 JJA', '2026 JAS', '2026 ASO', '2026 SON', '2026 OND', '2027 NDJ'],
-      monitor: { nino34: '+0.8', oni: '+0.7', soi: '−0.4', status: '厄尔尼诺' },
+      // 实时指标：NOAA CPC 公开数据（周 Niño3.4 + 月度 ONI / SOI）
+      monitor: {
+        nino34: signedText(latestWeekly.nino34, 1),
+        oni: signedText(latestMonthly.oni, 2),
+        soi: signedText(latestMonthly.soi, 1),
+        status: classifyEnso(latestWeekly.nino34, latestMonthly.oni)
+      },
       heatContent: [
         { name: '东部', value: 84, label: '+1.6°' },
         { name: '中东部', value: 72, label: '+1.2°' },
@@ -435,7 +478,7 @@ export default {
         { id: 'system-introduction', number: '01', title: '系统介绍', eyebrow: 'CLIMATE INTELLIGENCE', icon: 'el-icon-monitor', tone: 'cyan-tone', description: '了解平台如何整合海气输入、ENSO 长提前期预测、历史数据联动和可信验证，并进入完整系统说明。', highlights: ['数据 · 预测 · 验证', '点击进入系统介绍'], path: '/enso/overview', action: '进入系统介绍' },
         { id: 'enso-introduction', number: '02', title: 'ENSO 介绍', eyebrow: 'OCEAN–ATMOSPHERE', icon: 'el-icon-help', tone: 'blue-tone', description: '了解厄尔尼诺、拉尼娜与中性位相，以及海气耦合如何驱动热带太平洋的年际变化。', highlights: ['ENSO 位相', '海气耦合机制'], path: '/enso/introduction' },
         { id: 'prediction-models', number: '03', title: '预测模型', eyebrow: 'MODEL LAB', icon: 'el-icon-data-analysis', tone: 'gold-tone', description: '对比 LSTA-Swin 与 ConvLSTM 产品，查看 Niño3.4 / ONI 预测轨迹和赤道太平洋空间场。', highlights: ['长提前期预测', '多模型产品'], path: '/enso/models', action: '查看模型' },
-        { id: 'historical-replay', number: '04', title: '历史数据', eyebrow: 'HISTORICAL DATA', icon: 'el-icon-time', tone: 'violet-tone', description: '在历史回放中选择历史事件或 LSTA-Swin 起报月份，地图、指数和其他面板同步联动。', highlights: ['事件与起报月份', '地图 · 指数 · 风场联动'], path: '/enso/replay' },
+        { id: 'historical-replay', number: '04', title: '历史数据', eyebrow: 'HISTORICAL DATA', icon: 'el-icon-time', tone: 'violet-tone', description: '在历史回放中选择历史事件或模型起报月份，地图、指数和其他面板同步联动。', highlights: ['事件与起报月份', '地图 · 指数 · 风场联动'], path: '/enso/replay' },
         { id: 'lead-validation', number: '05', title: '提前期验证', eyebrow: 'SKILL ASSESSMENT', icon: 'el-icon-aim', tone: 'cyan-tone', description: '查看 1–20 个月提前期的相关系数、平均绝对误差与均方根误差，评估模型技巧衰减。', highlights: ['PCC · MAE · RMSE', '逐提前期统计'], path: '/enso/validation' },
         { id: 'physical-explanation', number: '06', title: '物理解释', eyebrow: 'PHYSICAL INSIGHT', icon: 'el-icon-view', tone: 'gold-tone', description: '通过时空演变与显著性图，追踪模型关注区域和海温、风应力信号之间的物理联系。', highlights: ['时空演变', '预测显著性'], path: '/enso/explainability' },
         { id: 'climate-nc', number: '07', title: '气候 NC', eyebrow: 'CLIMATE DATA EXPLORER', icon: 'el-icon-picture-outline', tone: 'blue-tone', description: '载入 NetCDF 气候格点数据，选择变量和时次，查看空间分布并开展区域分析。', highlights: ['NetCDF 格点场', '变量 · 时次 · 区域'], path: '/enso/climate-data', action: '打开数据视图' }
@@ -458,7 +501,7 @@ export default {
     },
     modeChipText() {
       const base = this.viewScope === 'model'
-        ? 'LSTA-Swin 模型历史预测'
+        ? '模型历史预测回放'
         : this.viewScope === 'event'
           ? 'ENSO 历史事件回放'
           : '实时状态'
@@ -575,13 +618,13 @@ export default {
         return {
           kicker: 'MODEL REPLAY · CONFIRMATION',
           title: '播放模型历史预测回放',
-          question: '是否开始播放以下 LSTA-Swin 模型历史预测数据？',
+          question: '是否开始播放以下模型历史预测数据？',
           itemLabel: item.label,
           rangeName: '起报与时长',
           rangeLabel: `${item.start} 起报`,
           peakLabel: `轨迹峰值 ${item.peak}`,
           frameLabel: `${item.series.length} 个月逐月`,
-          source: item.source || 'AIMB LSTA-Swin 历史预测演示序列',
+          source: item.source || '模型历史预测序列',
           warning: ''
         }
       }
@@ -797,9 +840,22 @@ export default {
     displayMonitor() {
       if (!this.historyMode) return this.monitor
       const value = this.historyCurrentValue
-      if (value === null) return { nino34: '—', oni: '—', soi: '—', status: this.historyActiveItem && this.historyActiveItem.type ? this.historyActiveItem.type : '历史事件' }
+      const month = this.historyCurrentPoint ? this.historyCurrentPoint.month : ''
+      const observation = month ? monthObservation(month) : null
+      // 历史回放同样展示真实 SOI：有实测取实测，否则取该月之前最近一条
+      const soiValue = observation && observation.soi !== null && observation.soi !== undefined
+        ? observation.soi
+        : (month ? nearestSoi(month) : null)
+      const soiText = signedText(soiValue, 1)
+      const statusText = this.historyType === 'model'
+        ? (value === null ? '模型预测' : classifyEnso(value, observation && observation.oni))
+        : (this.historyActiveItem && this.historyActiveItem.type ? this.historyActiveItem.type : '历史事件')
+      if (value === null) return { nino34: '—', oni: '—', soi: soiText, status: statusText }
       const signed = this.signedValue(value)
-      return { nino34: signed, oni: signed, soi: '—', status: this.historyActiveItem.type }
+      const oniText = observation && observation.oni !== null && observation.oni !== undefined
+        ? signedText(observation.oni, 2)
+        : signed
+      return { nino34: signed, oni: oniText, soi: soiText, status: statusText }
     },
     realtimeStatus() {
       const status = this.monitor.status || '中性'
@@ -819,10 +875,12 @@ export default {
       }
     },
     displayPhaseTitle() {
-      return this.historyMode ? this.historyPhase : '厄尔尼诺发展'
+      return this.historyMode ? this.historyPhase : this.monitor.status
     },
     displayPhaseCaption() {
-      if (!this.historyMode) return '赤道中东太平洋持续增暖'
+      if (!this.historyMode) {
+        return `周 Niño3.4 ${this.monitor.nino34}℃，峰值预计 ${officialOutlook.peakWindow}`
+      }
       return this.historyPointDescription
     },
     displayThreshold() {
@@ -1405,7 +1463,7 @@ export default {
           const observed = LIVE_INDEX.observed[index]
           const forecast = LIVE_INDEX.forecast[index]
           if (observed !== null) rows.push(['实时预测 · 观测', label, observed.toFixed(2), 'Niño3.4'])
-          if (forecast !== null) rows.push(['实时预测 · 预测', label, forecast.toFixed(2), 'LSTA-Swin 演示轨迹'])
+          if (forecast !== null) rows.push(['实时预测 · 预测', label, forecast.toFixed(2), '模型预测轨迹'])
         })
       } else {
         const tag = `${this.historyType === 'model' ? '模型历史预测' : '历史事件'} · ${this.historyActiveItem.label}`
@@ -1711,7 +1769,7 @@ export default {
         const series = []
         if (this.historyHasData) {
           series.push({
-            name: this.historyType === 'event' ? '事件 ONI' : 'LSTA-Swin 预测', type: 'line', smooth: .25, showSymbol: false,
+            name: this.historyType === 'event' ? '事件 ONI' : '模型预测', type: 'line', smooth: .25, showSymbol: false,
             data: values, lineStyle: { width: 2.5, color: '#ffad64', type: this.historyType === 'event' ? 'solid' : 'dashed' },
             itemStyle: { color: '#ffb36c' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 153, 87, .18)' }, { offset: 1, color: 'rgba(255, 153, 87, 0)' }]) },
             markPoint: this.historyCurrentValue === null ? undefined : { symbol: 'circle', symbolSize: 9, itemStyle: { color: '#fff0c5', borderColor: '#ff9e5f', borderWidth: 2 }, label: { show: false }, data: [{ coord: [labels[this.currentIndexSafe] || labels[0], this.historyCurrentValue] }] },
