@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from model import ENSO_Seq2Seq_ConvLSTM
 from enso_dataset import ENSOSpatialDataset
 import wind_service
+import enso_observations
 
 app = FastAPI(title="ConvLSTM预测模型")
 
@@ -53,6 +54,31 @@ def get_wind():
         raise HTTPException(status_code=503, detail=detail)
     return _json_safe(result)
 
+
+@app.get("/enso/observations")
+def get_enso_observations():
+    """ENSO 指数观测（ONI / SOI / 周 Niño 区距平）。
+
+    按需检查上游是否更新（条件请求，304 直接复用缓存），失败时返回上次缓存。
+    """
+    try:
+        return _json_safe(enso_observations.get_observations())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"ENSO 观测数据暂不可用：{exc}")
+
+
+@app.on_event("startup")
+def _warm_enso_observations():
+    """启动后台预热：先把指数数据拉一遍，避免首个用户请求等待上游。"""
+    import threading
+
+    def _run():
+        try:
+            enso_observations.get_observations()
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def load_model(weight_path):

@@ -29,6 +29,15 @@ module.exports = defineConfig({
         proxyTimeout: 300000,
         // 告诉上游不要压缩，保证 SSE 逐段下发
         headers: { 'Accept-Encoding': 'identity' }
+      },
+      // python 引擎（ENSO 观测指数 / 风场）：开发环境代理到本地 8000，
+      // 生产环境由 nginx 的 /pyeng/ location 转发，前后端路径一致
+      '/pyeng': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        pathRewrite: { '^/pyeng': '' },
+        timeout: 60000,
+        proxyTimeout: 60000
       }
     }
   }

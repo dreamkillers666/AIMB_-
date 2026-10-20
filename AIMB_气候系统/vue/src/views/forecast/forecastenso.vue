@@ -393,6 +393,20 @@ const LIVE_INDEX = (() => {
   return { labels, observed, forecast }
 })()
 
+const addMonthKey = (month, amount) => {
+  const [year, value] = month.split('-').map(Number)
+  const date = new Date(Date.UTC(year, value - 1 + amount, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+// 以该月为中心的三个月窗口首字母（如 8 月 → JAS），与 ONI 季节口径一致
+const seasonLabel = (month) => {
+  const index = Number(month.slice(5, 7)) - 1
+  return MONTH_ABBR[(index + 11) % 12][0] + MONTH_ABBR[index][0] + MONTH_ABBR[(index + 1) % 12][0]
+}
+
 // 当前阶段判定：以周 Niño3.4 距平为主（官方强度分级 ≥2.5 为超强），并用 ONI 做交叉校验
 const classifyEnso = (weekly, oni) => {
   const weeklyValue = Number(weekly)
@@ -408,6 +422,15 @@ const classifyEnso = (weekly, oni) => {
   if (reference <= -0.5) return '拉尼娜'
   return '中性'
 }
+
+// 内置快照（构建期）；接口可用时由远程观测覆盖，断网/接口不可用时回落到这里
+const STATIC_MONITOR = {
+  nino34: signedText(latestWeekly.nino34, 1),
+  oni: signedText(latestMonthly.oni, 2),
+  soi: signedText(latestMonthly.soi, 1),
+  status: classifyEnso(latestWeekly.nino34, latestMonthly.oni)
+}
+
 
 export default {
   name: 'ForecastENSOScreen',
@@ -451,13 +474,8 @@ export default {
       pulseKey: '',
       pulseTimer: null,
       periods: ['2026 JJA', '2026 JAS', '2026 ASO', '2026 SON', '2026 OND', '2027 NDJ'],
-      // 实时指标：NOAA CPC 公开数据（周 Niño3.4 + 月度 ONI / SOI）
-      monitor: {
-        nino34: signedText(latestWeekly.nino34, 1),
-        oni: signedText(latestMonthly.oni, 2),
-        soi: signedText(latestMonthly.soi, 1),
-        status: classifyEnso(latestWeekly.nino34, latestMonthly.oni)
-      },
+      // 远程观测（/enso/observations）：拿到后覆盖内置快照，失败保持快照
+      remoteObservation: null,
       heatContent: [
         { name: '东部', value: 84, label: '+1.6°' },
         { name: '中东部', value: 72, label: '+1.2°' },
@@ -837,6 +855,43 @@ export default {
       if (value <= -0.5) return `${month}冷异常维持，Niño3.4 为 ${this.signedValue(value)} ℃。`
       return `${month}指数接近中性，Niño3.4 为 ${this.signedValue(value)} ℃。`
     },
+    // 实时指标：优先远程观测，回落到内置快照
+    monitor() {
+      const remote = this.remoteObservation
+      if (!remote) return STATIC_MONITOR
+      const weekly = remote.latestWeekly || {}
+      const monthly = remote.latestMonthly || {}
+      if (monthly.oni === undefined && weekly.nino34 === undefined) return STATIC_MONITOR
+      return {
+        nino34: signedText(weekly.nino34, 1),
+        oni: signedText(monthly.oni, 2),
+        soi: signedText(monthly.soi, 1),
+        status: classifyEnso(weekly.nino34, monthly.oni)
+      }
+    },
+    // 实时指数序列：最近 5 个观测季节 + 4 个预测季节
+    liveIndex() {
+      const remote = this.remoteObservation
+      if (!remote || !Array.isArray(remote.recentOni) || remote.recentOni.length < 2) return LIVE_INDEX
+      const labels = []
+      const observed = []
+      const forecast = []
+      const recent = remote.recentOni.slice(-5)
+      recent.forEach(([month, value]) => {
+        labels.push(seasonLabel(month))
+        observed.push(Number(value))
+        forecast.push(null)
+      })
+      let cursor = recent[recent.length - 1][0]
+      for (let step = 0; step < 4; step += 1) {
+        cursor = addMonthKey(cursor, 1)
+        const scenario = forecastScenario(cursor)
+        labels.push(seasonLabel(cursor))
+        observed.push(null)
+        forecast.push(scenario ? scenario.mid : null)
+      }
+      return { labels, observed, forecast }
+    },
     displayMonitor() {
       if (!this.historyMode) return this.monitor
       const value = this.historyCurrentValue
@@ -1091,6 +1146,7 @@ export default {
     this.updateClock()
     this.clockTimer = setInterval(this.updateClock, 1000)
     this.runBootSequence()
+    this.loadRemoteObservations()
     this.$nextTick(() => {
       this.initCharts()
       window.addEventListener('resize', this.handleResize)
@@ -1135,6 +1191,24 @@ export default {
       document.body.classList.remove('enso-booting')
     },
     // ---- B3 · KPI 脉冲 ----
+    /** 拉取实时观测（失败静默回落到内置快照，不阻塞界面） */
+    async loadRemoteObservations() {
+      if (typeof fetch !== 'function') return
+      const controller = typeof AbortController === 'function' ? new AbortController() : null
+      const timer = setTimeout(() => { if (controller) controller.abort() }, 15000)
+      try {
+        const response = await fetch('/pyeng/enso/observations', { signal: controller ? controller.signal : undefined })
+        clearTimeout(timer)
+        if (!response.ok) return
+        const data = await response.json()
+        if (!data || !data.latestMonthly || data.latestMonthly.oni === null) return
+        this.remoteObservation = data
+        this.$nextTick(() => { try { this.renderIndexChart() } catch (error) { /* 图表未就绪 */ } })
+      } catch (error) {
+        clearTimeout(timer)
+        // 保持内置快照
+      }
+    },
     flashKpi(key) {
       this.pulseKey = key
       if (this.pulseTimer) clearTimeout(this.pulseTimer)
@@ -1459,9 +1533,10 @@ export default {
     buildSeriesRows() {
       const rows = []
       if (!this.historyMode) {
-        LIVE_INDEX.labels.forEach((label, index) => {
-          const observed = LIVE_INDEX.observed[index]
-          const forecast = LIVE_INDEX.forecast[index]
+        const live = this.liveIndex
+        live.labels.forEach((label, index) => {
+          const observed = live.observed[index]
+          const forecast = live.forecast[index]
           if (observed !== null) rows.push(['实时预测 · 观测', label, observed.toFixed(2), 'Niño3.4'])
           if (forecast !== null) rows.push(['实时预测 · 预测', label, forecast.toFixed(2), '模型预测轨迹'])
         })
@@ -1799,17 +1874,24 @@ export default {
         }, true)
         return
       }
-      const labels = ['MAM', 'AMJ', 'MJJ', 'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ']
+      const live = this.liveIndex
+      const labels = live.labels
+      const liveValues = live.observed.concat(live.forecast).filter(value => value !== null && value !== undefined)
+      const liveMin = liveValues.length ? Math.min(...liveValues) : -0.5
+      const liveMax = liveValues.length ? Math.max(...liveValues) : 1.5
+      const axisMin = Math.min(-0.5, Math.floor(liveMin) - 0.5)
+      const axisMax = Math.max(0.5, Math.ceil(liveMax) + 0.5)
+      const axisInterval = (axisMax - axisMin) > 5 ? 2 : 1
       const baseAxis = { axisTick: { show: false }, axisLine: { lineStyle: { color: '#29465b' } }, axisLabel: { color: '#839fb4', fontSize: 8, interval: 1, margin: 8 } }
       this.charts.index.setOption({
         animationDuration: 1300,
         tooltip: { trigger: 'axis', backgroundColor: 'rgba(3, 20, 35, .96)', borderColor: '#1d718b', textStyle: { color: '#e3f6ff', fontSize: 11 }, formatter: params => `${params[0].axisValue}<br/>${params.filter(item => item.value != null).map(item => `${item.marker} ${item.seriesName}：${item.value.toFixed(1)}°C`).join('<br/>')}` },
         grid: { left: 34, right: 10, top: 14, bottom: 32 },
         xAxis: { type: 'category', boundaryGap: false, data: labels, ...baseAxis },
-        yAxis: { type: 'value', min: -1, max: 2, interval: 1, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#839fb4', fontSize: 9, formatter: '{value}°' }, splitLine: { lineStyle: { color: 'rgba(75, 136, 164, .15)', type: 'dashed' } } },
+        yAxis: { type: 'value', min: axisMin, max: axisMax, interval: axisInterval, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#839fb4', fontSize: 9, formatter: '{value}°' }, splitLine: { lineStyle: { color: 'rgba(75, 136, 164, .15)', type: 'dashed' } } },
         series: [
-          { name: '观测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 5, connectNulls: false, data: LIVE_INDEX.observed, lineStyle: { width: 2.5, color: '#42d8e5' }, itemStyle: { color: '#72f2eb', borderColor: '#092638', borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(33, 201, 217, .2)' }, { offset: 1, color: 'rgba(33, 201, 217, 0)' }]) } },
-          { name: '预测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 4, connectNulls: false, data: LIVE_INDEX.forecast, lineStyle: { width: 2, type: 'dashed', color: '#ffad64' }, itemStyle: { color: '#ffb36c' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 153, 87, .18)' }, { offset: 1, color: 'rgba(255, 153, 87, 0)' }]) }, markLine: { symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: 'rgba(255, 176, 107, .45)', type: 'dashed', width: 1 }, data: [{ yAxis: .5 }, { yAxis: -.5 }] } }
+          { name: '观测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 5, connectNulls: false, data: live.observed, lineStyle: { width: 2.5, color: '#42d8e5' }, itemStyle: { color: '#72f2eb', borderColor: '#092638', borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(33, 201, 217, .2)' }, { offset: 1, color: 'rgba(33, 201, 217, 0)' }]) } },
+          { name: '预测', type: 'line', smooth: .35, showSymbol: true, symbolSize: 4, connectNulls: false, data: live.forecast, lineStyle: { width: 2, type: 'dashed', color: '#ffad64' }, itemStyle: { color: '#ffb36c' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 153, 87, .18)' }, { offset: 1, color: 'rgba(255, 153, 87, 0)' }]) }, markLine: { symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: 'rgba(255, 176, 107, .45)', type: 'dashed', width: 1 }, data: [{ yAxis: .5 }, { yAxis: -.5 }] } }
         ]
       }, true)
     },
