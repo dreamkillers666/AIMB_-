@@ -151,19 +151,83 @@ const replayById = eventFixtures.reduce((result, event) => {
   return result
 }, {})
 
-const noDataEvent = entry => ({
-  ...entry,
-  hasData: false,
-  source: 'NOAA CPC ONI v6 · 历史事件目录',
-  sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
-  peak: '—',
-  phase: '—',
-  description: '该事件已列入 ENSO 历史事件目录，可在此选择并查看事件元数据。'
-})
+/* ------------------------------------------------------------------ */
+/* 目录事件的合成序列                                                    */
+/* 目录只提供事件起止年月与类型，这里按 ENSO 生命史形状生成确定性示意序列，  */
+/* 让所有事件都能回放；数值为示意，不代表观测。                            */
+/* ------------------------------------------------------------------ */
+
+// FNV-1a：同一个事件每次渲染都得到同一组数值，避免刷新后曲线跳变
+const hashSeed = (text) => {
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) / 4294967295
+}
+
+const monthSpan = (start, end) => {
+  const [sy, sm] = start.split('-').map(Number)
+  const [ey, em] = end.split('-').map(Number)
+  return Math.max(12, (ey - sy) * 12 + (em - sm) + 1)
+}
+
+// 单峰生命史：高斯包络 + 月度起伏；持续性事件叠加一个次峰形成"反复维持"
+const synthesizeValues = (entry) => {
+  const seed = hashSeed(entry.id)
+  const total = monthSpan(entry.start, entry.end)
+  const isLaNina = entry.type.indexOf('拉尼娜') > -1
+  const isStrong = entry.type.indexOf('强') > -1
+  const isMulti = entry.type.indexOf('持续性') > -1
+  // 峰值幅度（ONI 量级）：强暖 +1.5~+2.4，暖 +0.9~+1.4，冷 -0.7~-1.2
+  const amplitude = isStrong
+    ? 1.5 + seed * 0.9
+    : isLaNina
+      ? -(0.7 + seed * 0.5)
+      : 0.9 + seed * 0.5
+  // 峰值位置：暖事件多在北半球秋末，冷事件偏早
+  const peakAt = Math.round(total * (isLaNina ? 0.32 + seed * 0.16 : 0.44 + seed * 0.16))
+  const spread = Math.max(2.2, total * (isMulti ? 0.3 : 0.2))
+  const values = []
+  for (let i = 0; i < total; i += 1) {
+    const main = Math.exp(-(((i - peakAt) / spread) ** 2))
+    // 持续性事件：尾部再给一个次峰，表现冷/暖异常的反复维持
+    const second = isMulti ? 0.55 * Math.exp(-(((i - (peakAt + total * 0.34)) / (spread * 0.85)) ** 2)) : 0
+    // 端点收拢：事件首尾回到中性附近
+    const edge = Math.min(1, i / 3, (total - 1 - i) / 3)
+    const envelope = Math.min(1.1, main + second) * Math.max(0, edge)
+    // 月度起伏（确定性）：±0.12 的 ONI 级抖动
+    const wobble = 0.12 * Math.sin(i * 1.7 + seed * 12.6) + 0.05 * Math.sin(i * 3.3 + seed * 5.1)
+    let value = amplitude * envelope + wobble * envelope
+    // 暖事件衰减期常见转冷尾巴（不越过中性过远）
+    if (!isLaNina && !isMulti && i > peakAt + spread * 1.4) {
+      value -= 0.25 * Math.min(1, (i - peakAt - spread * 1.4) / (spread * 0.8))
+    }
+    values.push(Number(value.toFixed(2)))
+  }
+  return values
+}
+
+const synthesizeEvent = (entry) => {
+  const values = synthesizeValues(entry)
+  const series = makeSeries(entry.start, values)
+  const years = `${entry.start.slice(0, 4)}–${entry.end.slice(0, 4)}`
+  return {
+    ...entry,
+    hasData: true,
+    source: 'ENSO 事件目录 + 合成示意序列（非观测）',
+    sourceUrl: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/oni/v6/index.php',
+    peak: formatPeak(peakValue(values, entry.type)),
+    phase: `${years} ${entry.type}过程 · 合成示意序列`,
+    description: `${entry.label} 的逐月指数与空间距平场由事件目录元数据合成，用于演示"发展—峰值—衰减"回放；数值为示意，不代表观测。`,
+    series
+  }
+}
 
 export const historyEvents = catalogEntries.map(entry => replayById[entry.id]
   ? { ...entry, ...replayById[entry.id] }
-  : noDataEvent(entry))
+  : synthesizeEvent(entry))
 
 const wrapLongitude = value => {
   let result = value % 360
