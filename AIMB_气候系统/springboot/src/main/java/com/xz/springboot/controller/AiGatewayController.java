@@ -46,6 +46,14 @@ public class AiGatewayController {
     /** 网关密钥（如需更换，改这里即可；对外发布建议移到 application.yml 或环境变量） */
     private static final String API_KEY = "sk-9214623399b1dc4ad9bbaaf870794bdeb4339a8d248ca144c3c976ec682dee2a";
 
+    /**
+     * 上游 Cloudflare 会按 User-Agent 拦截：Java 默认 UA 直接被 502，浏览器 UA 正常通过。
+     * 这里固定一个常见浏览器 UA，避免 JDK 版本变化导致默认 UA 又被拦。
+     */
+    private static final String UPSTREAM_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/131.0.0.0 Safari/537.36";
+
     private static final Pattern STREAM_FLAG = Pattern.compile("\"stream\"\\s*:\\s*true");
 
     private final RestTemplate restTemplate;
@@ -128,47 +136,87 @@ public class AiGatewayController {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(Collections.singletonList(MediaType.ALL));
         headers.set("Authorization", "Bearer " + API_KEY);
+        headers.set("User-Agent", UPSTREAM_USER_AGENT);
+        headers.set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
         return headers;
+    }
+
+    /** 上游波动类错误：出流前可安全重试一次 */
+    private static boolean isRetryable(int status) {
+        return status == 502 || status == 503 || status == 504;
+    }
+
+    private static void sleepBeforeRetry() {
+        try {
+            Thread.sleep(400L);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** 一次性转发（保留上游状态码，便于前端区分 401 / 429 等） */
     private ResponseEntity<byte[]> relayOnce(HttpMethod method, String path, byte[] body) {
-        try {
-            ResponseEntity<byte[]> upstream = restTemplate.exchange(
-                    URI.create(UPSTREAM + path),
-                    method,
-                    new HttpEntity<>(body, upstreamHeaders()),
-                    byte[].class);
-            HttpHeaders headers = new HttpHeaders();
-            MediaType contentType = upstream.getHeaders().getContentType();
-            headers.setContentType(contentType != null ? contentType : MediaType.APPLICATION_JSON);
-            return new ResponseEntity<>(upstream.getBody(), headers, upstream.getStatusCode());
-        } catch (HttpStatusCodeException e) {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            return new ResponseEntity<>(e.getResponseBodyAsByteArray(), headers, e.getStatusCode());
-        } catch (Exception e) {
-            return gatewayError(e);
+        ResponseEntity<byte[]> lastFailure = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                ResponseEntity<byte[]> upstream = restTemplate.exchange(
+                        URI.create(UPSTREAM + path),
+                        method,
+                        new HttpEntity<>(body, upstreamHeaders()),
+                        byte[].class);
+                HttpHeaders headers = new HttpHeaders();
+                MediaType contentType = upstream.getHeaders().getContentType();
+                headers.setContentType(contentType != null ? contentType : MediaType.APPLICATION_JSON);
+                return new ResponseEntity<>(upstream.getBody(), headers, upstream.getStatusCode());
+            } catch (HttpStatusCodeException e) {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                lastFailure = new ResponseEntity<>(e.getResponseBodyAsByteArray(), headers, e.getStatusCode());
+                if (attempt == 1 || !isRetryable(e.getRawStatusCode())) {
+                    return lastFailure;
+                }
+                sleepBeforeRetry();
+            } catch (Exception e) {
+                if (attempt == 1) {
+                    return gatewayError(e);
+                }
+                sleepBeforeRetry();
+            }
         }
+        return lastFailure != null ? lastFailure : gatewayError(new IllegalStateException("AI 网关转发失败"));
     }
 
-    /** 流式转发：边读上游边写下游，保证逐字效果 */
+    /** 流式转发：边读上游边写下游，保证逐字效果；出流前遇到 5xx 重试一次 */
     private void relayStream(String path, byte[] body, OutputStream outputStream) {
-        restTemplate.execute(URI.create(UPSTREAM + path), HttpMethod.POST, request -> {
-            request.getHeaders().putAll(upstreamHeaders());
-            if (body != null && body.length > 0) {
-                request.getBody().write(body);
+        boolean[] streamStarted = {false};
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                restTemplate.execute(URI.create(UPSTREAM + path), HttpMethod.POST, request -> {
+                    request.getHeaders().putAll(upstreamHeaders());
+                    if (body != null && body.length > 0) {
+                        request.getBody().write(body);
+                    }
+                }, response -> {
+                    streamStarted[0] = true;
+                    InputStream input = response.getBody();
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, read);
+                        outputStream.flush();
+                    }
+                    return null;
+                });
+                return;
+            } catch (HttpStatusCodeException e) {
+                // 已经写出字节就不能重试（会重复内容），交由上层透传错误
+                if (streamStarted[0] || attempt == 1 || !isRetryable(e.getRawStatusCode())) {
+                    throw e;
+                }
+                streamStarted[0] = false;
+                sleepBeforeRetry();
             }
-        }, response -> {
-            InputStream input = response.getBody();
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, read);
-                outputStream.flush();
-            }
-            return null;
-        });
+        }
     }
 
     private ResponseEntity<byte[]> gatewayError(Exception e) {
