@@ -6,6 +6,8 @@ const AI_GATEWAY_ORIGIN = process.env.VUE_APP_AI_ORIGIN || 'https://api.gs88.sho
 
 module.exports = defineConfig({
   transpileDependencies: true,
+  // 部署子路径（GitHub Pages 项目站点为 /仓库名/；服务器根路径部署时保持默认 '/'）
+  publicPath: process.env.VUE_APP_PUBLIC_PATH || '/',
   // 生产构建不输出 sourcemap：dist 体积减半，且不暴露源码
   productionSourceMap: false,
   devServer: {
