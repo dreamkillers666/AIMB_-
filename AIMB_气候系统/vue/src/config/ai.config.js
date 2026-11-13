@@ -23,7 +23,7 @@ const DEFAULT_GATEWAY_ORIGIN = 'https://api.gs88.shop'
 // 同源代理前缀（与 vue.config.js 的 devServer.proxy 保持一致）
 const DEFAULT_PROXY_BASE = '/ai-gateway/v1'
 const DEFAULT_DIRECT_BASE = `${DEFAULT_GATEWAY_ORIGIN}/v1`
-const DEFAULT_API_KEY = 'sk-9214623399b1dc4ad9bbaaf870794bdeb4339a8d248ca144c3c976ec682dee2a'
+const DEFAULT_API_KEY = 'sk-14ea482f5c106ee664816eb2d2c5cc1c9640139aa8d8727826ec66be5364106e'
 
 // 读取构建期环境变量（未配置时回落到配置常量）
 // 注意：webpack 只静态替换完整的 process.env.VUE_APP_XXX 表达式，

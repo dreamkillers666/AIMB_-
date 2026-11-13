@@ -1,0 +1,10 @@
+{
+  "name": "aimb-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AIMB_ 气候系统单端口托管服务（静态 + AI 网关同源代理）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
