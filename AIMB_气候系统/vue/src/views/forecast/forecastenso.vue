@@ -2176,4 +2176,32 @@ export default {
 .export-result.fail{color:#f09595}
 .export-center-card:focus{outline:0}
 @media(max-width:900px){.export-center-button span{display:none}.export-formats{grid-template-columns:1fr}}
+/* ===== 移动端自适应（2026-11-13） ===== */
+@media(max-width:900px){
+  .screen-body{grid-template-columns:1fr;gap:10px}
+  .screen-body>*{min-width:0}
+  .map-card{min-height:56vh}
+  .kpi-strip{flex:0 0 auto;min-height:0}
+}
+@media(max-width:620px){
+  .screen-header{flex-wrap:wrap;row-gap:8px}
+  .brand-lockup{display:none}
+  .screen-title h1{font-size:17px;line-height:1.25}
+  .title-kicker{font-size:8px;letter-spacing:.08em}
+  .header-status{width:100%;justify-content:space-between;flex-wrap:wrap;gap:6px}
+  .header-status .clock{font-size:14px}
+  .export-center-button{padding:6px 8px}
+  .history-control{margin:8px 0 6px;padding:8px}
+  .history-type-switch{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .history-type-switch button{flex:0 0 auto;white-space:nowrap;padding:7px 8px;font-size:9px}
+  .kpi-strip{grid-template-columns:repeat(2,minmax(0,1fr));clip-path:none}
+  .kpi-item{padding:8px 9px}
+  .map-card{min-height:50vh}
+  .module-grid{grid-template-columns:1fr}
+  .export-center-card{width:calc(100vw - 16px);max-height:88vh;padding:12px 12px 10px}
+  .export-formats{grid-template-columns:1fr;gap:8px}
+  .export-format{padding:10px}
+  .export-intro{font-size:10px}
+  .replay-confirm-mask{padding:8px}
+}
 </style>

@@ -44,12 +44,12 @@
       <section
         v-if="chatVisible"
         class="ai-pop ai-pop-chat"
-        :class="popLayout.side"
+        :class="[popLayout.side, { 'is-mobile': popLayout.mobile }]"
         :style="popLayout.style"
         role="dialog"
         aria-label="ENSO AI 对话"
       >
-        <span class="pop-caret" :style="popLayout.caretStyle"></span>
+        <span v-if="!popLayout.mobile" class="pop-caret" :style="popLayout.caretStyle"></span>
         <header class="ai-panel-head">
           <span class="head-mark"><i class="el-icon-cpu"></i></span>
           <div class="head-text">
@@ -109,12 +109,12 @@
       <section
         v-if="briefingVisible"
         class="ai-pop ai-pop-briefing"
-        :class="popLayout.side"
+        :class="[popLayout.side, { 'is-mobile': popLayout.mobile }]"
         :style="popLayout.style"
         role="dialog"
         :aria-label="briefingHead.title"
       >
-        <span class="pop-caret" :style="popLayout.caretStyle"></span>
+        <span v-if="!popLayout.mobile" class="pop-caret" :style="popLayout.caretStyle"></span>
         <header class="ai-panel-head">
           <span class="head-mark gold"><i :class="briefing.kind === 'model' ? 'el-icon-document' : 'el-icon-time'"></i></span>
           <div class="head-text">
@@ -344,6 +344,7 @@ export default {
       dragMoved: false,
       dragStart: { x: 0, y: 0 },
       dragOrigin: { x: 0, y: 0 },
+      lastTouchAt: 0,
       chatVisible: false,
       briefingVisible: false,
       briefing: { kind: 'event', event: {}, timeline: {}, available: false },
@@ -381,6 +382,24 @@ export default {
       const width = Math.min(wantWidth, vw - 24)
       const height = Math.min(wantHeight, vh - 24)
 
+      // 移动端：改为底部抽屉，铺满屏宽、贴在屏幕底部（悬浮球被覆盖，用标题栏关闭）
+      if (vw <= 768) {
+        const sheetHeight = Math.min(Math.round(vh * 0.62), 520)
+        return {
+          mobile: true,
+          side: 'bottom',
+          style: {
+            left: '8px',
+            right: '8px',
+            bottom: '12px',
+            top: 'auto',
+            width: `${vw - 16}px`,
+            height: `${sheetHeight}px`
+          },
+          caretStyle: {}
+        }
+      }
+
       // 优先出现在悬浮球右侧；右侧放不下就翻到左侧
       let side = 'right'
       let left = this.orb.x + ORB_SIZE + gap
@@ -398,6 +417,7 @@ export default {
 
       return {
         side,
+        mobile: false,
         style: {
           left: `${Math.round(left)}px`,
           top: `${Math.round(top)}px`,
@@ -501,6 +521,10 @@ export default {
       }
     },
     onDragStart(event) {
+      // 移动端触摸结束后浏览器还会合成一次 mousedown/mouseup：
+      // 若不屏蔽，会触发「打开 → 立刻收起」的闪退（touch 一次 + mouse 一次 = 开关两次）
+      if (event.type === 'mousedown' && Date.now() - this.lastTouchAt < 900) return
+      if (event.type === 'touchstart') this.lastTouchAt = Date.now()
       const point = this.readPoint(event)
       if (!point) return
       this.dragging = true
@@ -1074,4 +1098,10 @@ export default {
   .orb-tip{display:none}
   .ai-pop{box-shadow:0 14px 32px rgba(2,10,14,.6)}
 }
+/* ===== 移动端：底部抽屉式弹片 ===== */
+.ai-pop.is-mobile{left:8px;right:8px;border-radius:14px;box-shadow:0 18px 44px rgba(2,10,14,.68),0 0 0 1px rgba(94,158,168,.18) inset}
+.ai-pop.is-mobile .ai-panel-head{padding:10px 12px}
+.ai-pop.is-mobile .ai-panel-body{padding:10px 12px}
+.ai-pop.is-mobile .ai-panel-foot{padding:8px 12px}
+.ai-orb.is-open{transform:scale(.94)}
 </style>

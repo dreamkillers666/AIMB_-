@@ -534,4 +534,12 @@ export default {
 
 /* 能力卡片为奇数末位时占满整行，避免尾行孤卡 */
 .system-capability-grid .system-capability-card:last-child:nth-child(3n + 1){grid-column:1 / -1}
+/* ===== 移动端：顶部导航与页面标题（2026-11-13） ===== */
+@media(max-width:760px){
+  .topbar{flex-wrap:wrap;gap:8px;padding:10px 12px}
+  .topbar nav{order:3;width:100%;display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .topbar nav a{flex:0 0 auto;padding:6px 10px;font-size:11px}
+  .page-heading{padding:14px 12px 6px}
+  .page-heading h1{font-size:22px}
+}
 </style>
