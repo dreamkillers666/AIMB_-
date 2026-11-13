@@ -1,0 +1,1 @@
+"use strict";(self["webpackChunkvue"]=self["webpackChunkvue"]||[]).push([[2089],{3769:function(u,e,n){n.r(e),n.d(e,{default:function(){return f}});var t=function(){var u=this,e=u._self._c;return e("div")},r=[],c={name:"About"},l=c,s=n(1001),a=(0,s.Z)(l,t,r,!1,null,"2b039ac9",null),f=a.exports}}]);
