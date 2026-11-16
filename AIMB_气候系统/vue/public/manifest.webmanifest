@@ -1,0 +1,16 @@
+{
+  "name": "ENSO 预测分析与监测平台",
+  "short_name": "ENSO监测",
+  "description": "AIMB · 全球气候遥感与预测中心 ENSO 监测大屏",
+  "start_url": "./?sharecode=5B2DCXTHD7",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#04121c",
+  "theme_color": "#04121c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
